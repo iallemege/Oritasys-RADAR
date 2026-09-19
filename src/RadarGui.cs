@@ -39,18 +39,11 @@ namespace RDA
         internal void Draw()
         {
             EnsureWindowOnScreen();
-            // Empty title — fully custom chrome inside.
-            Color prev = GUI.color;
-            float opacity = Mathf.Clamp(Config.WindowOpacity != null ? Config.WindowOpacity.Value : 0.92f, 0.2f, 1f);
-            GUI.color = new Color(prev.r, prev.g, prev.b, prev.a * opacity);
-            try
-            {
-                _window = GUI.Window(WindowId, _window, DrawContents, GUIContent.none, ScopeDraw.WindowStyle);
-            }
-            finally
-            {
-                GUI.color = prev;
-            }
+            // Apply opacity to panel fills (ScopeDraw.PanelFill / PanelBgEffective).
+            // GUI.color around GUI.Window does NOT tint opaque ScopeDraw.Fill — do not rely on it.
+            float opacity = Mathf.Clamp(Config.WindowOpacity != null ? Config.WindowOpacity.Value : 0.92f, 0.05f, 1f);
+            ScopeDraw.UiOpacity = opacity;
+            _window = GUI.Window(WindowId, _window, DrawContents, GUIContent.none, ScopeDraw.WindowStyle);
         }
 
         /// <summary>Live apply settings-menu position to the MFD rect.</summary>
@@ -182,7 +175,7 @@ namespace RDA
         {
             GUI.BeginGroup(rect);
 
-            ScopeDraw.Fill(new Rect(0f, 0f, rect.width, rect.height), new Color(0.015f, 0.06f, 0.05f, 0.9f));
+            ScopeDraw.Fill(new Rect(0f, 0f, rect.width, rect.height), new Color(0.015f, 0.06f, 0.05f, 0.9f * ScopeDraw.UiOpacity));
             ScopeDraw.Fill(new Rect(0f, rect.height - 2f, rect.width, 2f), ScopeDraw.CyanAccent * new Color(1f, 1f, 1f, 0.45f));
 
             ScopeDraw.ClippedLabel(
@@ -324,7 +317,7 @@ namespace RDA
         /// <summary>PW-style dense STT lock panel (vanilla lock only).</summary>
         private void DrawLockDataStrip(Rect rect)
         {
-            ScopeDraw.Fill(rect, new Color(0.1f, 0.05f, 0.01f, 0.95f));
+            ScopeDraw.Fill(rect, new Color(0.1f, 0.05f, 0.01f, 0.95f * ScopeDraw.UiOpacity));
             ScopeDraw.Border(rect, ScopeDraw.AmberLock, 1.75f);
 
             RadarContact? tgt = FindPrimary();
@@ -462,7 +455,7 @@ namespace RDA
 
         private void DrawElevTape(Rect rect)
         {
-            ScopeDraw.Fill(rect, ScopeDraw.PanelBg);
+            ScopeDraw.PanelFill(rect);
             ScopeDraw.Border(rect, ScopeDraw.PanelBorder, 1.5f);
             ScopeDraw.CornerBrackets(rect, ScopeDraw.PanelBorder, 8f, 1.5f);
 
@@ -492,7 +485,7 @@ namespace RDA
         /// </summary>
         private void DrawAcmAgPage(Rect area)
         {
-            ScopeDraw.Fill(area, ScopeDraw.PanelBg);
+            ScopeDraw.PanelFill(area);
             ScopeDraw.Border(area, ScopeDraw.PhosphorDim, 1f);
 
             Vector2 center = ScopeDraw.Snap(new Vector2(area.x + area.width * 0.5f, area.y + area.height * 0.42f));
@@ -554,7 +547,7 @@ namespace RDA
                     continue;
                 }
 
-                bool isLock = c.Locked || (_modes.Locked && _modes.LockedContactId == c.Id);
+                bool isLock = c.Locked || (_modes.Locked && _modes.IsLockedContact(c.Id));
                 bool isDes = designate == c.Id && designate != null;
 
                 // Never designate highlight if candidate somehow is self
@@ -627,12 +620,16 @@ namespace RDA
                 }
             }
 
+            // Reserve CRT bottom-bar band so TER/HAT never overlap the left "ACM" chip.
+            const float crtBarH = 20f;
+            float barTop = area.yMax - crtBarH;
             string statusEn = _modes.Locked ? "LOCKED" : "SCANNING";
-            ScopeDraw.StripLabel(new Rect(area.x, center.y + radius + 8f, area.width, 22f), statusEn, ScopeDraw.HeaderStyle);
+            float statusY = Mathf.Min(center.y + radius + 6f, barTop - 52f);
+            ScopeDraw.StripLabel(new Rect(area.x, statusY, area.width, 18f), statusEn, ScopeDraw.HeaderStyle);
 
-            ScopeDraw.StripLabel(new Rect(area.x + 6f, area.yMax - 40f, 180f, 16f), FormatTerrainShort(), ScopeDraw.TinyStyle);
+            ScopeDraw.StripLabel(new Rect(area.x + 6f, barTop - 34f, 200f, 14f), FormatTerrainShort(), ScopeDraw.TinyStyle);
             ScopeDraw.StripLabel(
-                new Rect(area.x + 6f, area.yMax - 24f, 160f, 16f),
+                new Rect(area.x + 6f, barTop - 18f, 180f, 14f),
                 "HAT " + Mathf.Max(0f, _contacts.OwnshipAltitudeMeters).ToString("0") + "m",
                 ScopeDraw.TinyStyle);
 
@@ -645,7 +642,7 @@ namespace RDA
         /// </summary>
         private void DrawSingleSttPage(Rect area)
         {
-            ScopeDraw.Fill(area, ScopeDraw.PanelBg);
+            ScopeDraw.PanelFill(area);
             ScopeDraw.Border(area, ScopeDraw.PhosphorDim, 1f);
 
             RadarContact? tgt = null;
@@ -728,7 +725,7 @@ namespace RDA
 
 private void DrawPpi(Rect area)
         {
-            ScopeDraw.Fill(area, ScopeDraw.PanelBg);
+            ScopeDraw.PanelFill(area);
             ScopeDraw.Border(area, ScopeDraw.PanelBorder, 1.75f);
             // CRT: no corner-bracket chrome on PPI
 
@@ -809,30 +806,45 @@ private void DrawPpi(Rect area)
             
             ScopeDraw.Chevron(center, 8f, new Color(0.85f, 1f, 0.9f, 1f));
 
-            // Lock line: single line to display lock only (targetList last / LockedContactId).
-            // Never draw one line per multi-lock entry.
-            if (_modes.Locked && _modes.LockedContactId is int lockId && _contacts.ShouldDrawHud)
+            // TRK lines: one line per vanilla WeaponManager.targetList entry.
+            // Primary/display (last / LockedContactId) = thicker amber; others thinner.
+            if (_modes.Locked && _contacts.ShouldDrawHud)
             {
-                RadarContact? lockTgt = null;
                 IReadOnlyList<RadarContact> snap = _contacts.Contacts;
-                for (int li = 0; li < snap.Count; li++)
-                {
-                    if (snap[li].Id == lockId)
-                    {
-                        lockTgt = snap[li];
-                        break;
-                    }
-                }
+                IReadOnlyList<int> lockIds = _modes.LockedContactIds;
+                int displayId = _modes.LockedContactId ?? (lockIds.Count > 0 ? lockIds[lockIds.Count - 1] : -1);
+                float rangeMLock = Mathf.Max(1f, rangeKm * 1000f);
 
-                if (lockTgt != null)
+                // Prefer explicit multi-id list; fall back to single LockedContactId.
+                int n = lockIds.Count > 0 ? lockIds.Count : (displayId >= 0 ? 1 : 0);
+                for (int li = 0; li < n; li++)
                 {
-                    float rangeMLock = Mathf.Max(1f, rangeKm * 1000f);
+                    int lockId = lockIds.Count > 0 ? lockIds[li] : displayId;
+                    RadarContact? lockTgt = null;
+                    for (int ci = 0; ci < snap.Count; ci++)
+                    {
+                        if (snap[ci].Id == lockId)
+                        {
+                            lockTgt = snap[ci];
+                            break;
+                        }
+                    }
+
+                    if (lockTgt == null)
+                    {
+                        continue;
+                    }
+
                     float plotBearing = northUp ? lockTgt.AbsoluteBearingDeg : lockTgt.AzimuthDeg;
                     float u = Mathf.Clamp01(lockTgt.RangeMeters / rangeMLock);
                     float blipR = radius * u;
                     float extendR = Mathf.Min(radius, blipR + 10f);
                     Vector2 tip = Polar(center, extendR, plotBearing);
-                    ScopeDraw.Line(center, tip, ScopeDraw.AmberLock, 2f);
+                    bool primary = lockId == displayId;
+                    Color lineCol = primary
+                        ? ScopeDraw.AmberLock
+                        : new Color(ScopeDraw.AmberLock.r, ScopeDraw.AmberLock.g, ScopeDraw.AmberLock.b, 0.65f);
+                    ScopeDraw.Line(center, tip, lineCol, primary ? 2.25f : 1.25f);
                 }
             }
 
@@ -1279,7 +1291,7 @@ private void DrawPpi(Rect area)
 
         private void DrawFooter(Rect rect)
         {
-            ScopeDraw.Fill(rect, new Color(0.015f, 0.05f, 0.04f, 0.9f));
+            ScopeDraw.Fill(rect, new Color(0.015f, 0.05f, 0.04f, 0.9f * ScopeDraw.UiOpacity));
             ScopeDraw.Border(rect, ScopeDraw.PanelBorderOuter, 1.5f);
 
             string left =

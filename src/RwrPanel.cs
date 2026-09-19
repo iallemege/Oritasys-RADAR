@@ -117,7 +117,7 @@ namespace RDA
         internal void Draw(Rect area)
         {
             Rect r = ScopeDraw.Snap(area);
-            ScopeDraw.Fill(r, ScopeDraw.PanelBg);
+            ScopeDraw.PanelFill(r);
             ScopeDraw.Border(r, ScopeDraw.PanelBorder, 1.75f);
             ScopeDraw.CornerBrackets(r, ScopeDraw.CyanAccent * new Color(1f, 1f, 1f, 0.65f), 10f, 1.75f);
             ScopeDraw.ClippedLabel(new Rect(r.x + 6f, r.y + 4f, r.width - 12f, 18f), "RWR", ScopeDraw.HeaderStyle);
@@ -140,14 +140,16 @@ namespace RDA
 
             GUI.BeginGroup(r);
             Vector2 lc = new Vector2(center.x - r.x, center.y - r.y);
-            float flashPhase = (Time.unscaledTime * 6f) % 1f;
-            bool flashOn = flashPhase < 0.55f;
+            // Slower flash — only for inbound missile (Flash==true). Lock = steady red L.
+            float flashPhase = (Time.unscaledTime * 3f) % 1f;
+            bool flashOn = flashPhase < 0.5f;
             foreach (RwrThreat threat in _threats)
             {
                 float rad = threat.BearingDeg * Mathf.Deg2Rad;
                 Vector2 pos = lc + new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * (radius * 0.82f);
                 Color color = ColorFor(threat);
-                if (threat.Flash || threat.Kind == RwrKind.Lock || threat.Kind == RwrKind.Missile)
+                // Search illuminations: steady symbol. Lock: steady red. Missile: flash.
+                if (threat.Flash && threat.Kind == RwrKind.Missile)
                 {
                     if (!flashOn)
                     {
@@ -155,7 +157,6 @@ namespace RDA
                     }
                     else
                     {
-                        // Threat emphasis
                         color = Color.Lerp(color, Color.white, 0.25f);
                     }
                 }
@@ -166,19 +167,36 @@ namespace RDA
 
             GUI.EndGroup();
 
+            bool anyMissile = false;
             bool anyLock = false;
             for (int i = 0; i < _threats.Count; i++)
             {
-                if (_threats[i].Kind == RwrKind.Lock || _threats[i].Kind == RwrKind.Missile)
+                if (_threats[i].Kind == RwrKind.Missile)
+                {
+                    anyMissile = true;
+                }
+
+                if (_threats[i].Kind == RwrKind.Lock)
                 {
                     anyLock = true;
-                    break;
                 }
             }
 
-            string footer = anyLock
-                ? (flashOn ? "LOCKED" : "LOCK!")
-                : (_threats.Count + "  S/L/M");
+            // No blinky LOCK!/LOCKED banner for search or lock — steady "LOCK" only; missile may flash.
+            string footer;
+            if (anyMissile)
+            {
+                footer = flashOn ? "MISSILE" : "MSL!";
+            }
+            else if (anyLock)
+            {
+                footer = "LOCK";
+            }
+            else
+            {
+                footer = _threats.Count + "  S/L/M";
+            }
+
             ScopeDraw.ClippedLabel(new Rect(r.x + 8f, r.yMax - 22f, r.width - 16f, 18f), footer, ScopeDraw.TinyStyle);
         }
 
@@ -317,7 +335,7 @@ namespace RDA
 
                     if (isTargetFlag == true)
                     {
-                        IngestOwnshipThreat(args[0], RwrKind.Lock, flash: true);
+                        IngestOwnshipThreat(args[0], RwrKind.Lock, flash: false);
                         return true;
                     }
 
@@ -370,7 +388,7 @@ namespace RDA
 
             if (isTarget)
             {
-                IngestOwnshipThreat(emitter, RwrKind.Lock, flash: true, bearingHint: ReadPayloadBearing(payload));
+                IngestOwnshipThreat(emitter, RwrKind.Lock, flash: false, bearingHint: ReadPayloadBearing(payload));
                 return true;
             }
 
@@ -405,7 +423,8 @@ namespace RDA
         {
             RwrThreat t = FromNode(node);
             t.Kind = kind;
-            t.Flash = flash || kind == RwrKind.Lock || kind == RwrKind.Missile;
+            // Only inbound missile flashes. Confirmed Lock = steady red L (no banner blink).
+            t.Flash = kind == RwrKind.Missile && flash;
             t.Ttl = kind switch
             {
                 RwrKind.Missile => 8f,
@@ -460,7 +479,8 @@ namespace RDA
             }
 
             RwrKind kind = Classify(text);
-            bool flash = kind == RwrKind.Lock || kind == RwrKind.Missile;
+            // FromNode is fallback — never escalate Search→Lock flash without isTarget path.
+            bool flash = kind == RwrKind.Missile;
             return new RwrThreat
             {
                 Id = GameReflect.IdOf(node),
@@ -529,12 +549,21 @@ namespace RDA
                 return RwrKind.Missile;
             }
 
-            if (Contains(text, "lock", "stt", "spike", "illum", "isTarget", "paint", "hardLock"))
+            // True lock / spike only — do NOT treat search illuminate ("illum"/"paint") as Lock.
+            if (Contains(text, "hardLock", "isTarget", "stt", "spike") ||
+                (Contains(text, "lock") && !Contains(text, "unlock", "nolock")))
             {
+                // Prefer Search when text also clearly says search/scan without hard lock keywords.
+                if (Contains(text, "search", "scan", "rws", "detected") &&
+                    !Contains(text, "hardLock", "isTarget", "stt", "spike", "locked"))
+                {
+                    return RwrKind.Search;
+                }
+
                 return RwrKind.Lock;
             }
 
-            if (Contains(text, "search", "scan", "rws", "RadarWarning", "detected"))
+            if (Contains(text, "search", "scan", "rws", "RadarWarning", "detected", "illum", "paint"))
             {
                 return RwrKind.Search;
             }

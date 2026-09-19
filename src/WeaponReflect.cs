@@ -320,8 +320,8 @@ namespace RDA
         }
 
         /// <summary>
-        /// Display lock for PPI pointing line + world TRK: prefer <b>last</b> entry in targetList
-        /// (多个锁定只显示最后一条线). Falls back to primary [0] when only one. Empty → false.
+        /// Display lock for world TRK label: prefer <b>last</b> entry in targetList.
+        /// PPI draws a line per EnumerateTargetList entry (multi-lock). Empty → false.
         /// </summary>
         internal static bool TryGetDisplayLockTargetUnit(object? aircraft, out object? unit)
         {

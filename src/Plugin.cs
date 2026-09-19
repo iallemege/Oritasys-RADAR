@@ -16,8 +16,8 @@ namespace RDA
         public const string DisplayName = "Oritasy's RADAR";
         public const string BiaRuntimeGuid = "bia.runtime";
         // BepInEx parses this value as SemVer; keep the brand suffix in DisplayVersion.
-        public const string Version = "0.0.6";
-        public const string DisplayVersion = "0.0.6T";
+        public const string Version = "0.0.7";
+        public const string DisplayVersion = "0.0.7T";
 
         /// <summary>Full expansion for README / log only — never shown on the GUI chrome.</summary>
         public const string FullExpansion = "Realtime Aerial Detection And Ranging (R.A.D.A.R.)";

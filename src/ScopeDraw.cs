@@ -10,6 +10,19 @@ namespace RDA
         internal static readonly Color PhosphorMuted = new Color(0.2f, 0.75f, 0.35f, 0.8f);
         /// <summary>Deep panel #020B10.</summary>
         internal static readonly Color PanelBg = new Color(0.02f, 0.02f, 0.02f, 0.97f); // near-black CRT
+        /// <summary>Live MFD panel opacity from Display.WindowOpacity (applied to panel fills only).</summary>
+        internal static float UiOpacity = 1f;
+
+        /// <summary>Panel background with WindowOpacity multiplied into alpha.</summary>
+        internal static Color PanelBgEffective
+        {
+            get
+            {
+                float a = Mathf.Clamp01(PanelBg.a * Mathf.Clamp(UiOpacity, 0.05f, 1f));
+                return new Color(PanelBg.r, PanelBg.g, PanelBg.b, a);
+            }
+        }
+
         internal static readonly Color PanelBezel = new Color(0.02f, 0.08f, 0.1f, 0.98f);
         internal static readonly Color PanelBorder = new Color(0.18f, 0.72f, 0.42f, 0.98f);
         internal static readonly Color PanelBorderOuter = new Color(0.08f, 0.35f, 0.22f, 0.9f);
@@ -266,6 +279,12 @@ namespace RDA
             GUI.color = prev;
         }
 
+        /// <summary>Fill with PanelBgEffective (respects WindowOpacity).</summary>
+        internal static void PanelFill(Rect rect)
+        {
+            Fill(rect, PanelBgEffective);
+        }
+
         internal static void Border(Rect rect, Color color, float width = 1.5f)
         {
             Rect r = Snap(rect);
@@ -280,8 +299,9 @@ namespace RDA
         internal static void HudPanel(Rect rect, bool accentTop = true)
         {
             // CRT: flat near-black fill + thin phosphor border. No bezel / brackets / glow chrome.
+            // PanelFill applies WindowOpacity so the MFD is visibly translucent.
             Rect r = Snap(rect);
-            Fill(r, PanelBg);
+            PanelFill(r);
             Border(r, PhosphorDim, 1f);
         }
 

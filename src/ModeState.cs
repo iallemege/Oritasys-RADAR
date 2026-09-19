@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace RDA
@@ -58,6 +59,11 @@ namespace RDA
         internal bool ManualScanOverride { get; private set; }
 
         internal int? LockedContactId { get; set; }
+
+        /// <summary>All vanilla WeaponManager.targetList contact IDs (multi-lock). Display/primary last = LockedContactId.</summary>
+        private readonly List<int> _lockedContactIds = new List<int>(8);
+        internal IReadOnlyList<int> LockedContactIds => _lockedContactIds;
+
         internal bool Locked { get; private set; }
         internal float AntennaElevationDeg { get; private set; }
         internal bool ElevAuto { get; set; } = true;
@@ -314,10 +320,56 @@ namespace RDA
         {
             Locked = false;
             LockedContactId = null;
+            _lockedContactIds.Clear();
             LockedElevationDeg = null;
             LockElapsedSec = 0f;
             AcmDwellElapsed = 0f;
             AcmOutGateElapsed = 0f;
+        }
+
+        /// <summary>True when id is any vanilla multi-lock entry.</summary>
+        internal bool IsLockedContact(int id)
+        {
+            if (LockedContactId == id)
+            {
+                return true;
+            }
+
+            for (int i = 0; i < _lockedContactIds.Count; i++)
+            {
+                if (_lockedContactIds[i] == id)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Replace multi-lock ID set from SyncVanilla. <paramref name="displayId"/> is last/display lock.
+        /// </summary>
+        internal void SetVanillaLockIds(IReadOnlyList<int> ids, int displayId, bool softSwitchToTrk)
+        {
+            _lockedContactIds.Clear();
+            if (ids != null)
+            {
+                for (int i = 0; i < ids.Count; i++)
+                {
+                    int id = ids[i];
+                    if (!_lockedContactIds.Contains(id))
+                    {
+                        _lockedContactIds.Add(id);
+                    }
+                }
+            }
+
+            if (!_lockedContactIds.Contains(displayId))
+            {
+                _lockedContactIds.Add(displayId);
+            }
+
+            ApplyVanillaLock(displayId, softSwitchToTrk);
         }
 
         /// <param name="switchToTrk">True for player manual lock → auto TRK; false for TWS auto-lock.</param>
@@ -330,6 +382,8 @@ namespace RDA
 
             Locked = true;
             LockedContactId = contactId;
+            _lockedContactIds.Clear();
+            _lockedContactIds.Add(contactId);
             AcmCandidateId = contactId;
             AcmDwellElapsed = 0f;
             AcmOutGateElapsed = 0f;
@@ -358,6 +412,16 @@ namespace RDA
 
             Locked = true;
             LockedContactId = contactId;
+            if (_lockedContactIds.Count == 0 || (_lockedContactIds.Count == 1 && _lockedContactIds[0] != contactId))
+            {
+                _lockedContactIds.Clear();
+                _lockedContactIds.Add(contactId);
+            }
+            else if (!_lockedContactIds.Contains(contactId))
+            {
+                _lockedContactIds.Add(contactId);
+            }
+
             AcmCandidateId = contactId;
             AcmDwellElapsed = 0f;
             AcmOutGateElapsed = 0f;

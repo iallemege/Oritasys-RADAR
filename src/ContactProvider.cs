@@ -274,6 +274,8 @@ namespace RDA
             ApplyModeFilters();
             IngestAndMergeDatalink(markCone: true);
             DatalinkBridge.ContributeTracks(_networkHq, _contacts);
+            // SRC/TWS air-only must also drop DL ground/naval after merge.
+            FilterContactsByMode();
             SyncVanillaTargetLock();
             ApplyPdAspectGate(hardDrop: false); // soft-dim locked off-aspect; never drop vanilla lock
             FilterOutOfScanHighValueOnly();
@@ -366,7 +368,7 @@ namespace RDA
                 }
 
                 bool keep = h.Locked ||
-                            (_modes.Locked && _modes.LockedContactId == h.Id) ||
+                            (_modes.Locked && _modes.IsLockedContact(h.Id)) ||
                             (_rwr != null && _rwr.ContainsId(h.Id));
                 if (keep)
                 {
@@ -757,7 +759,7 @@ namespace RDA
             for (int i = list.Count - 1; i >= 0; i--)
             {
                 RadarContact c = list[i];
-                bool keepLocked = c.Locked || (_modes.Locked && _modes.LockedContactId == c.Id);
+                bool keepLocked = c.Locked || (_modes.Locked && _modes.IsLockedContact(c.Id));
                 if (keepLocked)
                 {
                     continue;
@@ -1349,7 +1351,7 @@ namespace RDA
                 if (_modes.Mode == RadarMode.SrcRws || _modes.Mode == RadarMode.Tws ||
                     _modes.Mode == RadarMode.Acm || _modes.Mode == RadarMode.Trk)
                 {
-                    bool keepLocked = _modes.Locked && _modes.LockedContactId == c.Id;
+                    bool keepLocked = _modes.Locked && _modes.IsLockedContact(c.Id);
                     // When ShowOutOfRangeHighValueOnly: defer drop to FilterOutOfScanHighValueOnly
                     // (after DL merge) so HV/threats outside cone remain.
                     if (!c.InCone && !keepLocked && !Config.ShowOutOfRangeHighValueOnly.Value)
@@ -1416,7 +1418,7 @@ namespace RDA
             foreach (RadarContact contact in _contacts)
             {
                 contact.Tracked = true;
-                if (_modes.Locked && _modes.LockedContactId == contact.Id)
+                if (_modes.Locked && _modes.IsLockedContact(contact.Id))
                 {
                     contact.Locked = true;
                     _modes.LockedElevationDeg = contact.ElevationDeg;
@@ -1424,10 +1426,10 @@ namespace RDA
             }
         }
 
-        /// <summary>ACM = A/G surface; TWS = air/missile. SRC keeps mixed.</summary>
+        /// <summary>ACM = A/G surface; SRC/RWS + TWS = air/missile only (drop ground/naval/building even from DL).</summary>
         private void FilterContactsByMode()
         {
-            if (_modes.Mode != RadarMode.Acm && _modes.Mode != RadarMode.Tws)
+            if (_modes.Mode != RadarMode.Acm && _modes.Mode != RadarMode.Tws && _modes.Mode != RadarMode.SrcRws)
             {
                 return;
             }
@@ -1435,9 +1437,10 @@ namespace RDA
             for (int i = _contacts.Count - 1; i >= 0; i--)
             {
                 RadarContact c = _contacts[i];
-                bool keepLocked = _modes.Locked && _modes.LockedContactId == c.Id;
+                bool keepLocked = _modes.Locked && _modes.IsLockedContact(c.Id);
                 if (keepLocked)
                 {
+                    // Locked air may stay on SRC/TWS; locked surface stays on ACM.
                     continue;
                 }
 
@@ -1465,9 +1468,9 @@ namespace RDA
                         _contacts.RemoveAt(i);
                     }
                 }
-                else if (_modes.Mode == RadarMode.Tws)
+                else if (_modes.Mode == RadarMode.Tws || _modes.Mode == RadarMode.SrcRws)
                 {
-                    // 对空自动锁定: air + missile only
+                    // SRC/RWS + TWS: air search only — drop Ground/Naval/Building/RadarStation (Unknown treated as surface).
                     bool air = c.Kind == ContactKind.Air || c.Kind == ContactKind.Missile;
                     if (!air)
                     {
@@ -1898,7 +1901,7 @@ namespace RDA
             _modes.AcmCandidateId = pick.Id;
             _contacts.Clear();
             pick.Tracked = true;
-            if (_modes.Locked && _modes.LockedContactId == pick.Id)
+            if (_modes.Locked && _modes.IsLockedContact(pick.Id))
             {
                 pick.Locked = true;
             }
@@ -2098,7 +2101,7 @@ namespace RDA
                     continue;
                 }
 
-                bool locked = c.Locked || (_modes.Locked && _modes.LockedContactId == c.Id);
+                bool locked = c.Locked || (_modes.Locked && _modes.IsLockedContact(c.Id));
                 float rangeM = c.RangeMeters;
                 bool isTail = c.AspectDeg >= (180f - headCone);
                 // Beam ≈ mid-aspect (everything not head-on / not tail).
@@ -2202,7 +2205,7 @@ namespace RDA
                     continue;
                 }
 
-                bool keepLocked = c.Locked || (_modes.Locked && _modes.LockedContactId == c.Id);
+                bool keepLocked = c.Locked || (_modes.Locked && _modes.IsLockedContact(c.Id));
                 if (keepLocked)
                 {
                     continue;
@@ -2274,45 +2277,46 @@ namespace RDA
         }
 
         /// <summary>
-        /// Nuclear Option truth: WeaponManager.GetTargetList() / targetList; primary = [0].
-        /// Sets Locked + LockedContactId from vanilla; ClearLock when empty.
-        /// Soft-switches display Mode to TRK when a lock appears.
+        /// Nuclear Option truth: WeaponManager.GetTargetList() / targetList.
+        /// Exposes <b>all</b> lock IDs for multi TRK lines; display/last = LockedContactId.
+        /// Missile guide primary remains [0]. Soft-switches display Mode to TRK when nonempty.
         /// </summary>
         private void SyncVanillaTargetLock()
         {
-            object? primary = null;
+            var units = new System.Collections.Generic.List<object>(8);
             try
             {
-                // Display lock = last targetList entry (single PPI line + world TRK).
-                // Missile guide primary remains [0] via CycleVanillaTargetList / TryGetPrimaryTarget.
-                if (!WeaponReflect.TryGetDisplayLockTargetUnit(_player, out primary))
+                foreach (object candidate in WeaponReflect.EnumerateTargetList(_player))
                 {
-                    primary = null;
+                    if (candidate == null)
+                    {
+                        continue;
+                    }
+
+                    if (candidate is UnityEngine.Object uo && uo == null)
+                    {
+                        continue;
+                    }
+
+                    if (GameReflect.IsClutterUnit(candidate))
+                    {
+                        continue;
+                    }
+
+                    if (IsLocalPlayerUnit(candidate))
+                    {
+                        continue;
+                    }
+
+                    units.Add(candidate);
                 }
             }
-            catch (Exception ex)
+            catch (System.Exception ex)
             {
                 Log.Debug("Vanilla targetList soft-fail: " + ex.Message);
             }
 
-            // Unity destroyed objects can still be non-null wrappers — check Component.
-            if (primary is UnityEngine.Object uo && uo == null)
-            {
-                primary = null;
-            }
-
-            if (primary != null && GameReflect.IsClutterUnit(primary))
-            {
-                primary = null;
-            }
-
-            // Never treat local player / ownship as a lock target (ACM or otherwise).
-            if (primary != null && IsLocalPlayerUnit(primary))
-            {
-                primary = null;
-            }
-
-            if (primary == null)
+            if (units.Count == 0)
             {
                 LockedUnitRaw = null;
                 if (_modes.Locked)
@@ -2320,7 +2324,6 @@ namespace RDA
                     _modes.ClearVanillaLock(restoreMode: true);
                 }
 
-                // Clear locked flags on contacts
                 for (int i = 0; i < _contacts.Count; i++)
                 {
                     _contacts[i].Locked = false;
@@ -2329,45 +2332,70 @@ namespace RDA
                 return;
             }
 
-            int id = GameReflect.IdOf(primary);
-            RadarContact? existing = FindById(id);
-            if (existing == null)
+            // Display lock = last entry; missile primary remains [0].
+            object displayUnit = units[units.Count - 1];
+            var lockIds = new System.Collections.Generic.List<int>(units.Count);
+            RadarContact? displayContact = null;
+
+            for (int u = 0; u < units.Count; u++)
             {
-                // Also search display snapshot / build fresh
-                existing = BuildContact(primary, "vanilla-targetList");
-                existing.Locked = true;
-                existing.Tracked = true;
-                _contacts.Add(existing);
-            }
-            else
-            {
-                existing.Locked = true;
-                existing.Tracked = true;
-                // Refresh kinematics from live unit
-                RadarContact refreshed = BuildContact(primary, existing.Source ?? "vanilla-targetList");
-                refreshed.Locked = true;
-                refreshed.Tracked = true;
-                refreshed.FromDatalink = existing.FromDatalink;
-                refreshed.InCone = existing.InCone;
-                refreshed.PositionQuality = existing.PositionQuality;
-                int idx = _contacts.IndexOf(existing);
-                if (idx >= 0)
+                object unit = units[u];
+                int id = GameReflect.IdOf(unit);
+                if (!lockIds.Contains(id))
                 {
-                    _contacts[idx] = refreshed;
-                    existing = refreshed;
+                    lockIds.Add(id);
+                }
+
+                RadarContact? existing = FindById(id);
+                if (existing == null)
+                {
+                    existing = BuildContact(unit, "vanilla-targetList");
+                    existing.Locked = true;
+                    existing.Tracked = true;
+                    _contacts.Add(existing);
+                }
+                else
+                {
+                    RadarContact refreshed = BuildContact(unit, existing.Source ?? "vanilla-targetList");
+                    refreshed.Locked = true;
+                    refreshed.Tracked = true;
+                    refreshed.FromDatalink = existing.FromDatalink;
+                    refreshed.InCone = existing.InCone;
+                    refreshed.PositionQuality = existing.PositionQuality;
+                    int idx = _contacts.IndexOf(existing);
+                    if (idx >= 0)
+                    {
+                        _contacts[idx] = refreshed;
+                        existing = refreshed;
+                    }
+                }
+
+                if (ReferenceEquals(unit, displayUnit))
+                {
+                    displayContact = existing;
                 }
             }
 
-            LockedUnitRaw = primary;
-            LockedUnitWorldPos = existing.WorldPosition;
+            int displayId = GameReflect.IdOf(displayUnit);
+            if (displayContact == null)
+            {
+                displayContact = FindById(displayId);
+            }
+
+            LockedUnitRaw = displayUnit;
+            if (displayContact != null)
+            {
+                LockedUnitWorldPos = displayContact.WorldPosition;
+                _modes.LockedElevationDeg = displayContact.ElevationDeg;
+            }
+
             LockedUnitCacheTime = Time.unscaledTime;
 
-            _modes.ApplyVanillaLock(id, softSwitchToTrk: true);
-            _modes.LockedElevationDeg = existing.ElevationDeg;
+            _modes.SetVanillaLockIds(lockIds, displayId, softSwitchToTrk: true);
 
             for (int i = 0; i < _contacts.Count; i++)
             {
-                _contacts[i].Locked = _contacts[i].Id == id;
+                _contacts[i].Locked = _modes.IsLockedContact(_contacts[i].Id);
             }
         }
 
@@ -2586,7 +2614,7 @@ namespace RDA
             for (int i = 0; i < _contacts.Count; i++)
             {
                 RadarContact c = _contacts[i];
-                if (c.Locked || (_modes.Locked && _modes.LockedContactId == c.Id))
+                if (c.Locked || (_modes.Locked && _modes.IsLockedContact(c.Id)))
                 {
                     return c;
                 }

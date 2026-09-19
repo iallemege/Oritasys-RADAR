@@ -90,7 +90,7 @@ namespace RDA
                 "Opacity  " + op.ToString("0.00") + "  (transparency)",
                 _label!);
             y += 18f;
-            op = GUI.HorizontalSlider(new Rect(pad, y, w, 18f), op, 0.2f, 1f);
+            op = GUI.HorizontalSlider(new Rect(pad, y, w, 18f), op, 0.05f, 1f);
             y += 28f;
 
             // Apply live
@@ -105,7 +105,7 @@ namespace RDA
 
             if (!Mathf.Approximately(op, Config.WindowOpacity.Value))
             {
-                Config.WindowOpacity.Value = Mathf.Clamp(op, 0.2f, 1f);
+                Config.WindowOpacity.Value = Mathf.Clamp(op, 0.05f, 1f);
             }
 
             // Reset position

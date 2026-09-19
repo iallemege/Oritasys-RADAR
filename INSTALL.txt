@@ -1,4 +1,4 @@
-Oritasy's RADAR 0.0.6T
+Oritasy's RADAR 0.0.7T
 
 Install:
 1. Install BepInEx 5 x64 (Mono) in the Nuclear Option game directory.
@@ -9,16 +9,16 @@ Install:
 4. Launch the game; BepInEx will load the plugin.
 
 Plugin DisplayName: Oritasy's RADAR
-BepInPlugin version (numeric SemVer): 0.0.6
-DisplayVersion: 0.0.6T
+BepInPlugin version (numeric SemVer): 0.0.7
+DisplayVersion: 0.0.7T
 
-Notes (0.0.6T):
-- Press `/` to open the Oritasy-style settings menu (RADAR window position + opacity). Persists to BepInEx config.
-- TWS auto-locks nearest + highest-threat air via vanilla WeaponManager.targetList (Radar.TwsAutoLock, default true).
-- Datalink contacts stay continuous between ingest ticks (persistent hold cache — no flicker).
+Notes (0.0.7T):
+- Press `/` for settings: window position + opacity (`Display.WindowOpacity` 0.05–1.0). Opacity multiplies panel fill alpha (visibly translucent); slider updates live.
+- SRC/RWS is air-search only — ground/naval/building/RadarStation contacts (including DL) are dropped; ACM remains A/G. Locked air may stay.
+- Multi-lock TRK: one PPI line per vanilla WeaponManager.targetList entry (primary/last thicker amber).
 - Hard prerequisite: bia.runtime. Soft deps: com.iallemmege.oritasy / com.iallemmege.oritasyhud.
 - DisableVanillaRadar default=false. Display.GuiDepth default=-1000.
 - Harmony patches only vanilla NuclearOption types — never BIA* types.
-- Toggle overlay with F6. BepInEx requires numeric SemVer in [BepInPlugin] (0.0.6); 0.0.6T is DisplayVersion.
+- Toggle overlay with F6. BepInEx requires numeric SemVer in [BepInPlugin] (0.0.7); 0.0.7T is DisplayVersion.
 - Default Display.HudGateMode=AircraftPresent; ForceShowHud=true is emergency bypass.
 - Ensure Oritasy plugin files end with .dll (not .dl) if used. OritasyFonts/ optional.
