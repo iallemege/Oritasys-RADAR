@@ -11,13 +11,13 @@ Independent PPI radar overlay inspired by PanzerWar-DE FlightRadar (RDR) *modes 
 | GUID | `com.iallemmege.RDA` |
 | Assembly | `RDA.dll` (kept for BepInEx install compatibility) |
 | Plugin DisplayName | **Oritasy's RADAR** |
-| Version | **0.0.3T** |
+| Version | **0.0.4T** (`DisplayVersion`; BepInEx SemVer: `0.0.4`) |
 
 Standalone plugin with no external Oritasy runtime dependency. Soft-loads optional `OritasyFonts` for branding (`Oritasy™` footer only).
 
 Vanilla TacScreen can be suppressed for the **local player** via `DisableVanillaRadar` (default on). RDA draws its own IMGUI window titled **Oritasy's RADAR**.
 
-## Features (v0.0.3T)
+## Features (v0.0.4T)
 
 - **OritasyHud compat / MFD visibility**: `GUI.depth = -1000` in `OnGUI` so RDA draws on top of other IMGUI mods; restore previous depth after draw
 - **`Display.HudGateMode`** (default **`AircraftPresent`**): `Seated` | `AircraftPresent` | `AlwaysWhenToggled` — AircraftPresent shows MFD when local aircraft resolves (hide only if `HasEjected==true` / destroyed)
@@ -160,6 +160,8 @@ Vanilla TacScreen can be suppressed for the **local player** via `DisableVanilla
 6. Launch once. Config is written to `BepInEx/config/com.iallemmege.RDA.cfg`.
    - Default `Display.HudGateMode` = **AircraftPresent** (MFD should appear when boarded).
    - If MFD still missing: set `Display.ForceShowHud = true` (emergency) and check LogOutput for `HUD diag:` / `OnGUI failed:` lines.
+
+**Versioning note:** BepInEx requires the plugin version in `[BepInPlugin]` to be numeric SemVer, so it uses `0.0.4`. The branded/user-facing version is `DisplayVersion = 0.0.4T`.
 
 ## Controls
 
@@ -351,7 +353,7 @@ Target framework: **netstandard2.1** (nullable enabled).
 ```text
 src/AircraftRadarProfile.cs   Per-aircraft envelope DTO + source tag
 src/RadarProfileCatalog.cs    Builtin / capacity / JSON override resolve
-src/Plugin.cs                BepInPlugin entry (Oritasy's RADAR 0.0.3T), digit hotkeys, IMGUI + funnel host
+src/Plugin.cs                BepInPlugin entry (Oritasy's RADAR 0.0.4T), digit hotkeys, IMGUI + funnel host
 src/Config.cs                BepInEx config (labels, datalink, ShowGunFunnel, DisableVanillaRadar, …)
 src/DatalinkBridge.cs        FactionHQ trackingDatabase ingest + Rpc/Cmd contribute
 src/RadarGui.cs              MFD chrome PPI + DL declutter + lock strip + custom chips

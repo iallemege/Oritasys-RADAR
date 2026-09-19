@@ -12,7 +12,9 @@ namespace RDA
     {
         public const string Guid = "com.iallemmege.RDA";
         public const string DisplayName = "Oritasy's RADAR";
-        public const string Version = "0.0.3T";
+        // BepInEx parses this value as SemVer; keep the brand suffix in DisplayVersion.
+        public const string Version = "0.0.4";
+        public const string DisplayVersion = "0.0.4T";
 
         /// <summary>Full expansion for README / log only — never shown on the GUI chrome.</summary>
         public const string FullExpansion = "Realtime Aerial Detection And Ranging (R.A.D.A.R.)";
@@ -54,7 +56,7 @@ namespace RDA
             // Heavy Harmony deferred to Start (one/two frames) so Oritasy / OritasyHud finish Awake first.
             // Visibility fixes (GUI.depth / HudGateMode) are the primary compat path — do not disable OritasyHud.
 
-            Log.Info($"{DisplayName} {Version} — {FullExpansion}. Toggle {RDA.Config.ToggleHotkey.Value}. HudGateMode={RDA.Config.HudGateMode.Value} ForceShowHud={RDA.Config.ForceShowHud.Value}. Soft-deps: oritasy / oritasyhud. Independent standalone plugin.");
+            Log.Info($"{DisplayName} {DisplayVersion} — {FullExpansion}. Toggle {RDA.Config.ToggleHotkey.Value}. HudGateMode={RDA.Config.HudGateMode.Value} ForceShowHud={RDA.Config.ForceShowHud.Value}. Soft-deps: oritasy / oritasyhud. Independent standalone plugin.");
         }
 
         private void Start()

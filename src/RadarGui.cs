@@ -1270,7 +1270,7 @@ private void DrawPpi(Rect area)
             ScopeDraw.ClippedLabel(new Rect(rect.x + 4f, rect.y + 2f, rect.width - 140f, rect.height - 4f), left, ScopeDraw.TinyStyle);
             // Oritasy branding (footer only) + plain version (no chip)
             ScopeDraw.ClippedLabel(new Rect(rect.xMax - 140f, rect.y, 72f, rect.height), OritasyUi.Branding, ScopeDraw.FooterBrandStyle);
-            ScopeDraw.ClippedLabel(new Rect(rect.xMax - 64f, rect.y, 60f, rect.height), "v" + Plugin.Version, ScopeDraw.TinyStyle);
+            ScopeDraw.ClippedLabel(new Rect(rect.xMax - 64f, rect.y, 60f, rect.height), "v" + Plugin.DisplayVersion, ScopeDraw.TinyStyle);
         }
     }
 }
