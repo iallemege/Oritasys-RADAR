@@ -166,7 +166,7 @@ namespace RDA
             DatalinkRefreshHz = file.Bind("Datalink", "DatalinkRefreshHz", 4f,
                 new ConfigDescription("Throttle HQ trackingDatabase ingest (Hz). Lower = less CPU when DL is dense.", new AcceptableValueRange<float>(1f, 30f)));
             DatalinkMaxMarkers = file.Bind("Datalink", "DatalinkMaxMarkers", 24,
-                new ConfigDescription("Hard cap on drawn datalink-only markers after priority cull (PerfMode caps further).", new AcceptableValueRange<int>(4, 128)));
+                new ConfigDescription("Hard cap on ingested AND drawn datalink-only markers after priority cull (range 4–128; PerfMode may cap further to 18).", new AcceptableValueRange<int>(4, 128)));
             DatalinkPreferHighValue = file.Bind("Datalink", "DatalinkPreferHighValue", true,
                 "When culling dense DL: keep threats / missiles / HV / foes first; drop distant spam.");
 

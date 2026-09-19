@@ -70,6 +70,11 @@ namespace RDA
         /// <summary>Direct lock / missile threat from soft poll (HQ missileAttacks, seeker on ownship).</summary>
         internal void IngestOwnshipThreat(object? emitterOrMissile, RwrKind kind, bool flash)
         {
+            IngestOwnshipThreat(emitterOrMissile, kind, flash, float.NaN);
+        }
+
+        internal void IngestOwnshipThreat(object? emitterOrMissile, RwrKind kind, bool flash, float bearingHint)
+        {
             if (emitterOrMissile == null)
             {
                 return;
@@ -78,6 +83,11 @@ namespace RDA
             try
             {
                 RwrThreat threat = FromEmitter(emitterOrMissile, kind, flash);
+                if (!float.IsNaN(bearingHint))
+                {
+                    threat.BearingDeg = ContactProvider.Normalize180(bearingHint);
+                }
+
                 if (threat.Iff == IffRelation.Friend && kind != RwrKind.Missile)
                 {
                     return;
@@ -202,6 +212,7 @@ namespace RDA
         private void Absorb(object? instance, object[]? args)
         {
             // Prefer unwrapping Aircraft.OnRadarWarning-like payloads: emitter + isTarget + detected.
+            // Only real illuminate/lock-on-player paths — cut false positives from loose unit args.
             if (TryAbsorbRadarWarningPayload(instance, args))
             {
                 return;
@@ -231,13 +242,21 @@ namespace RDA
                     continue;
                 }
 
-                RwrThreat threat = FromNode(node);
-                if (Mathf.Abs(threat.BearingDeg) < 0.01f && threat.Kind == RwrKind.Unknown && threat.Label == "?")
+                // Require warning-shaped payload — do not mirror arbitrary units onto RWR.
+                if (!LooksLikeRadarWarning(node))
                 {
                     continue;
                 }
 
-                // Drop friendly self / wingman noise — RWR is for emitters scanning/illuminating US
+                RwrThreat threat = FromNode(node);
+                if (threat.Kind == RwrKind.Unknown &&
+                    Mathf.Abs(threat.BearingDeg) < 0.01f &&
+                    (threat.Label == "?" || string.IsNullOrEmpty(threat.Label)))
+                {
+                    continue;
+                }
+
+                // Search-only noise without lock/missile: keep short; drop friendlies
                 if (threat.Iff == IffRelation.Friend && threat.Kind != RwrKind.Missile)
                 {
                     continue;
@@ -250,6 +269,7 @@ namespace RDA
         /// <summary>
         /// Nuclear Option: Aircraft.OnRadarWarning { emitter, detected, isTarget }.
         /// isTarget == true → player is being locked / painted (被锁定).
+        /// detected without isTarget → SEARCH only. Neither → drop (cut false positives).
         /// </summary>
         private bool TryAbsorbRadarWarningPayload(object? node, object[]? args)
         {
@@ -268,28 +288,46 @@ namespace RDA
 
             if (payload == null)
             {
-                // Flat args: (emitter, detected, isTarget) style
-                if (args != null && args.Length >= 1 && args[0] != null &&
+                // Flat args: (emitter, detected, isTarget) — require at least one bool flag
+                if (args != null && args.Length >= 2 && args[0] != null &&
                     (GameReflect.Unit != null && GameReflect.Unit.IsInstanceOfType(args[0]) ||
                      GameReflect.Aircraft != null && GameReflect.Aircraft.IsInstanceOfType(args[0])))
                 {
-                    bool flatIsTarget = false;
+                    bool? detectedFlag = null;
+                    bool? isTargetFlag = null;
                     for (int i = 1; i < args.Length; i++)
                     {
                         if (args[i] is bool b)
                         {
-                            // Last bool wins as isTarget (emitter, detected, isTarget)
-                            flatIsTarget = b;
+                            if (!detectedFlag.HasValue)
+                            {
+                                detectedFlag = b;
+                            }
+                            else
+                            {
+                                isTargetFlag = b;
+                            }
                         }
                     }
 
                     if (args.Length >= 3 && args[args.Length - 1] is bool lastB)
                     {
-                        flatIsTarget = lastB;
+                        isTargetFlag = lastB;
                     }
 
-                    RwrKind kind = flatIsTarget ? RwrKind.Lock : RwrKind.Search;
-                    IngestOwnshipThreat(args[0], kind, flash: flatIsTarget);
+                    if (isTargetFlag == true)
+                    {
+                        IngestOwnshipThreat(args[0], RwrKind.Lock, flash: true);
+                        return true;
+                    }
+
+                    if (detectedFlag == true)
+                    {
+                        IngestOwnshipThreat(args[0], RwrKind.Search, flash: false);
+                        return true;
+                    }
+
+                    // No illuminate/lock evidence — do not ingest (false-positive cut).
                     return true;
                 }
 
@@ -303,18 +341,22 @@ namespace RDA
             }
 
             object? emitter = GameReflect.FindMember(payload.GetType(),
-                "emitter", "Emitter", "source", "Source", "radar", "Radar", "unit", "Unit")?.Get(payload);
+                "emitter", "Emitter", "source", "Source", "radar", "Radar", "illuminator", "Illuminator")?.Get(payload);
             object? isTargetObj = GameReflect.FindMember(payload.GetType(),
                 "isTarget", "IsTarget", "targeted", "Targeted", "locked", "Locked", "hardLock", "HardLock")?.Get(payload);
             object? detectedObj = GameReflect.FindMember(payload.GetType(),
-                "detected", "Detected", "search", "Search")?.Get(payload);
+                "detected", "Detected")?.Get(payload);
 
             bool isTarget = isTargetObj is bool it && it;
-            bool detected = detectedObj is not bool d || d;
+            bool detected = detectedObj is bool dd && dd;
+            // If detected member missing but isTarget present, treat as illuminated when locked.
+            if (detectedObj == null && isTarget)
+            {
+                detected = true;
+            }
 
             if (emitter == null)
             {
-                // MissileWarning payload
                 object? missile = GameReflect.FindMember(payload.GetType(),
                     "missile", "Missile")?.Get(payload);
                 if (missile != null)
@@ -326,9 +368,28 @@ namespace RDA
                 return false;
             }
 
-            RwrKind k = isTarget ? RwrKind.Lock : (detected ? RwrKind.Search : RwrKind.Unknown);
-            IngestOwnshipThreat(emitter, k, flash: isTarget);
+            if (isTarget)
+            {
+                IngestOwnshipThreat(emitter, RwrKind.Lock, flash: true, bearingHint: ReadPayloadBearing(payload));
+                return true;
+            }
+
+            if (detected)
+            {
+                IngestOwnshipThreat(emitter, RwrKind.Search, flash: false, bearingHint: ReadPayloadBearing(payload));
+                return true;
+            }
+
+            // Neither illuminate nor lock — drop.
             return true;
+        }
+
+        private static float ReadPayloadBearing(object payload)
+        {
+            float b = GameReflect.ReadFloat(payload,
+                "bearing", "Bearing", "azimuth", "Azimuth", "relativeBearing", "RelativeBearing",
+                "bearingDeg", "BearingDeg");
+            return float.IsNaN(b) ? float.NaN : b;
         }
 
         private static bool LooksLikeRadarWarning(object value)
@@ -360,30 +421,35 @@ namespace RDA
         {
             Vector3 world = GameReflect.WorldPosition(node);
             float bearing = 0f;
-            if (world.sqrMagnitude > 1f)
+            float ownHdg = OwnshipHeadingDeg;
+            if (PlayerAircraft != null)
             {
-                Vector3 own = Vector3.zero;
-                if (PlayerAircraft != null)
+                float h = GameReflect.HeadingDeg(PlayerAircraft);
+                if (!float.IsNaN(h))
                 {
-                    own = GameReflect.WorldPosition(PlayerAircraft);
-                }
-                else
-                {
-                    Camera? cam = Camera.main;
-                    own = cam != null ? cam.transform.position : world;
-                }
-
-                Vector3 delta = world - own;
-                if (delta.sqrMagnitude > 1f)
-                {
-                    bearing = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
+                    ownHdg = h;
                 }
             }
 
-            float explicitBearing = GameReflect.ReadFloat(node, "bearing", "Bearing", "azimuth", "Azimuth", "heading");
+            float explicitBearing = GameReflect.ReadFloat(node,
+                "bearing", "Bearing", "azimuth", "Azimuth", "relativeBearing", "RelativeBearing",
+                "bearingDeg", "BearingDeg");
             if (!float.IsNaN(explicitBearing))
             {
-                bearing = explicitBearing;
+                // Prefer payload relative bearing when present
+                bearing = explicitBearing + ownHdg;
+            }
+            else if (world.sqrMagnitude > 1f)
+            {
+                Vector3 own = PlayerAircraft != null
+                    ? GameReflect.WorldPosition(PlayerAircraft)
+                    : (Camera.main != null ? Camera.main.transform.position : world);
+                Vector3 delta = world - own;
+                if (delta.sqrMagnitude > 1f)
+                {
+                    // World absolute then convert to ownship-relative below
+                    bearing = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
+                }
             }
 
             string text = (node.ToString() ?? string.Empty) + " " + GameReflect.LabelOf(node);
@@ -458,17 +524,17 @@ namespace RDA
 
         private static RwrKind Classify(string text)
         {
-            if (Contains(text, "missile", "launch", "pitbull", "arh", "sarh"))
+            if (Contains(text, "missile", "launch", "pitbull", "MissileWarning"))
             {
                 return RwrKind.Missile;
             }
 
-            if (Contains(text, "lock", "trk", "stt", "spike", "illum", "isTarget", "paint"))
+            if (Contains(text, "lock", "stt", "spike", "illum", "isTarget", "paint", "hardLock"))
             {
                 return RwrKind.Lock;
             }
 
-            if (Contains(text, "search", "scan", "rws", "src", "twr", "warn"))
+            if (Contains(text, "search", "scan", "rws", "RadarWarning", "detected"))
             {
                 return RwrKind.Search;
             }

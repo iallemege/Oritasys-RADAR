@@ -360,13 +360,12 @@ namespace RDA
                 return false;
             }
 
-            return name.IndexOf("RadarWarning", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   name.IndexOf("OnRadarWarning", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   name.IndexOf("MissileWarning", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            // Tight: only real illuminate / MAW paths (cut false positives from generic *Warning*).
+            return name.IndexOf("OnRadarWarning", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("RadarWarning", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    name.IndexOf("OnMissileWarning", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   name.IndexOf("ShowWarning", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   (name.IndexOf("Warning", StringComparison.OrdinalIgnoreCase) >= 0 &&
-                    name.IndexOf("Scan", StringComparison.OrdinalIgnoreCase) < 0);
+                   name.IndexOf("MissileWarning", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("OffMissileWarning", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool LooksLikeUnit(object value)

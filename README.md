@@ -11,11 +11,17 @@ Independent PPI radar overlay inspired by PanzerWar-DE FlightRadar (RDR) *modes 
 | GUID | `com.iallemmege.RDA` |
 | Assembly | `RDA.dll` (kept for BepInEx install compatibility) |
 | Plugin DisplayName | **Oritasy's RADAR** |
-| Version | **0.0.1T** |
+| Version | **0.0.2T** |
 
 Standalone plugin with no external Oritasy runtime dependency. Soft-loads optional `OritasyFonts` for branding (`Oritasy™` footer only).
 
 Vanilla TacScreen can be suppressed for the **local player** via `DisableVanillaRadar` (default on). RDA draws its own IMGUI window titled **Oritasy's RADAR**.
+
+## Features (v0.0.2T)
+
+- **Boarding HUD fix**: MFD seat gate uses Nuclear Option `Aircraft.HasEjected()` / `ejected` (prefer method). Live local aircraft + `!HasEjected` → draw HUD. Removed loose ownship name bans (`eject`/`parachute`) and generic-`disabled`-alone hide. Spectating uncertain fail-soft SHOW. Logs seat-gate flips; does **not** force `ShowWindow=false` on board
+- **DatalinkMaxMarkers**: BepInEx `Datalink.DatalinkMaxMarkers` (default **24**, range **4–128**) hard-caps ingested and drawn DL-only contacts after priority cull
+- **RWR accuracy**: tighten to real illuminate/lock on player — `OnRadarWarning.isTarget` / `detected`, `FactionHQ.missileAttacks` on ownship, seeker `lockedTarget`; cut false positives from loose AI `target`; better relative bearing. Soft-fail
 
 ## Features (v0.0.1T)
 
@@ -239,7 +245,7 @@ Mode FOV / range / track caps **scale relative to the active aircraft profile** 
 | `ShowDatalinkOnlyOutsideCone` | false | If true, keep DL only when outside own-radar cone |
 | `DatalinkInStandby` | **true** | Show DL tracks while radar is STBY |
 | `DatalinkRefreshHz` | **4** | Throttle HQ trackingDatabase ingest |
-| `DatalinkMaxMarkers` | **24** | Cap drawn DL-only markers after priority cull |
+| `DatalinkMaxMarkers` | **24** (4–128) | Hard cap ingested **and** drawn DL-only markers after priority cull |
 | `DatalinkPreferHighValue` | **true** | Prefer threats / HV / foes when culling dense DL |
 
 Own-radar / harmony contacts win over DL for the same Id. Friendly same-HQ units and self are skipped on ingest.
@@ -330,7 +336,7 @@ Target framework: **netstandard2.1** (nullable enabled).
 ```text
 src/AircraftRadarProfile.cs   Per-aircraft envelope DTO + source tag
 src/RadarProfileCatalog.cs    Builtin / capacity / JSON override resolve
-src/Plugin.cs                BepInPlugin entry (Oritasy's RADAR 0.0.1T), digit hotkeys, IMGUI + funnel host
+src/Plugin.cs                BepInPlugin entry (Oritasy's RADAR 0.0.2T), digit hotkeys, IMGUI + funnel host
 src/Config.cs                BepInEx config (labels, datalink, ShowGunFunnel, DisableVanillaRadar, …)
 src/DatalinkBridge.cs        FactionHQ trackingDatabase ingest + Rpc/Cmd contribute
 src/RadarGui.cs              MFD chrome PPI + DL declutter + lock strip + custom chips

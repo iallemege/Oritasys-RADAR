@@ -434,8 +434,11 @@ namespace RDA
 
         /// <summary>Skip units whose GameObject / definition / type name is cockpit/camera clutter.</summary>
         /// <summary>
-        /// Soft: true when local player appears seated in a flyable aircraft (not ejected / dead / spectating).
-        /// null = unknown → caller should fail-soft to "in aircraft" only when a live aircraft ref exists.
+        /// Soft seat gate (Nuclear Option): local aircraft resolved AND HasEjected() not true → seated.
+        /// Prefer Aircraft.HasEjected() then ejected bool. No ownship name bans (eject/parachute).
+        /// Generic disabled alone is NOT left-aircraft when !HasEjected. Spectating uncertain → fail-soft SHOW
+        /// when live local aircraft !HasEjected. Hide when no aircraft / HasEjected / destroyed.
+        /// null = unknown → caller fail-soft seated when a live aircraft ref exists.
         /// </summary>
         internal static bool? TryIsPlayerSeatedInAircraft(object? aircraft)
         {
@@ -451,43 +454,27 @@ namespace RDA
                     return false;
                 }
 
-                // Explicit dead / disabled / destroyed flags
-                if (TryIsUnitDeadOrDisabled(aircraft) == true)
+                // Primary Nuclear Option gate: HasEjected() / ejected
+                bool? ejected = TryHasEjected(aircraft);
+                if (ejected == true)
                 {
                     return false;
                 }
 
-                // Ejection / parachute / spectator markers on the unit or its name
-                string blob = (LabelOf(aircraft) ?? string.Empty) + " " + (aircraft.GetType().Name ?? string.Empty);
-                if (aircraft is UnityEngine.Object named && named != null && !string.IsNullOrEmpty(named.name))
-                {
-                    blob += " " + named.name;
-                }
-
-                if (ContainsIgnoreCase(blob, "parachute") ||
-                    ContainsIgnoreCase(blob, "eject") ||
-                    ContainsIgnoreCase(blob, "spectat") ||
-                    ContainsIgnoreCase(blob, "Observer") ||
-                    ContainsIgnoreCase(blob, "TargetCam"))
+                // Destroyed / dead only — NOT generic disabled (avionics may flip disabled while seated)
+                if (TryIsUnitDestroyedOrDead(aircraft) == true)
                 {
                     return false;
                 }
 
-                object? ejected = FindMember(aircraft.GetType(),
-                    "ejected", "Ejected", "isEjected", "IsEjected", "pilotEjected", "PilotEjected",
-                    "hasEjected", "HasEjected", "bailOut", "BailOut")?.Get(aircraft);
-                if (ejected is bool eb && eb)
+                // Spectating is unreliable (false positives hid MFD after board). Fail-soft SHOW when
+                // we have a live local aircraft and HasEjected is not true.
+                if (ejected == false)
                 {
-                    return false;
+                    return true;
                 }
 
-                // Pilot/occupant null alone is not conclusive (many SP builds leave it null).
-
-                if (TryIsSpectating())
-                {
-                    return false;
-                }
-
+                // HasEjected unknown: still show unless we have a clear destroy. Do not hide on spectate alone.
                 return true;
             }
             catch (Exception ex)
@@ -497,8 +484,74 @@ namespace RDA
             }
         }
 
-        /// <summary>Soft: unit destroyed / disabled / dead. null = unknown.</summary>
-        internal static bool? TryIsUnitDeadOrDisabled(object? unit)
+        /// <summary>
+        /// Prefer parameterless HasEjected() / hasEjected / IsEjected, then ejected bool field/prop.
+        /// null = unknown (member missing or soft-fail).
+        /// </summary>
+        internal static bool? TryHasEjected(object? aircraft)
+        {
+            if (aircraft == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                if (aircraft is UnityEngine.Object uo && uo == null)
+                {
+                    return null;
+                }
+
+                Type type = aircraft.GetType();
+
+                // Prefer methods first (Nuclear Option: Aircraft.HasEjected())
+                string[] methodNames =
+                {
+                    "HasEjected", "hasEjected", "IsEjected", "isEjected", "PilotEjected", "pilotEjected"
+                };
+                foreach (string name in methodNames)
+                {
+                    MethodInfo? method = null;
+                    for (Type? walk = type; walk != null && walk != typeof(object); walk = walk.BaseType)
+                    {
+                        method = walk.GetMethod(name, Any, null, Type.EmptyTypes, null);
+                        if (method != null)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (method == null || method.ReturnType == typeof(void))
+                    {
+                        continue;
+                    }
+
+                    object? result = method.Invoke(method.IsStatic ? null : aircraft, Array.Empty<object>());
+                    if (result is bool mb)
+                    {
+                        return mb;
+                    }
+                }
+
+                // Then bool field / property ejected
+                object? ejected = FindMember(type,
+                    "ejected", "Ejected", "isEjected", "IsEjected", "pilotEjected", "PilotEjected",
+                    "hasEjected", "HasEjected", "bailOut", "BailOut", "bailedOut", "BailedOut")?.Get(aircraft);
+                if (ejected is bool eb)
+                {
+                    return eb;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Debug("TryHasEjected soft-fail: " + ex.Message);
+            }
+
+            return null;
+        }
+
+        /// <summary>Soft: unit destroyed / dead (NOT generic disabled). null = unknown.</summary>
+        internal static bool? TryIsUnitDestroyedOrDead(object? unit)
         {
             if (unit == null)
             {
@@ -514,21 +567,44 @@ namespace RDA
 
                 object? flag = FindMember(unit.GetType(),
                     "destroyed", "Destroyed", "isDestroyed", "IsDestroyed",
-                    "dead", "Dead", "isDead", "IsDead",
-                    "disabled", "Disabled", "isDisabled", "IsDisabled",
-                    "unitDisabled", "UnitDisabled")?.Get(unit);
+                    "dead", "Dead", "isDead", "IsDead")?.Get(unit);
                 if (flag is bool b)
                 {
                     return b;
                 }
 
-                // enabled == false on Behaviour
-                if (unit is Behaviour beh)
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>Soft: unit destroyed / disabled / dead. null = unknown. Prefer TryIsUnitDestroyedOrDead for seat gate.</summary>
+        internal static bool? TryIsUnitDeadOrDisabled(object? unit)
+        {
+            bool? destroyed = TryIsUnitDestroyedOrDead(unit);
+            if (destroyed.HasValue)
+            {
+                return destroyed;
+            }
+
+            if (unit == null)
+            {
+                return true;
+            }
+
+            try
+            {
+                // Generic disabled alone is inconclusive for seat (caller should also check !HasEjected).
+                object? flag = FindMember(unit.GetType(),
+                    "disabled", "Disabled", "isDisabled", "IsDisabled",
+                    "unitDisabled", "UnitDisabled")?.Get(unit);
+                if (flag is bool b && b)
                 {
-                    if (!beh.enabled || !beh.gameObject.activeInHierarchy)
-                    {
-                        // Not conclusive alone (cockpit scripts may disable) — soft null
-                    }
+                    // Only treat as dead when also ejected / destroyed unknown — keep null so seat fail-softs.
+                    return null;
                 }
 
                 return null;

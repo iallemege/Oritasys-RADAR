@@ -9,7 +9,7 @@ namespace RDA
     {
         public const string Guid = "com.iallemmege.RDA";
         public const string DisplayName = "Oritasy's RADAR";
-        public const string Version = "0.0.1T";
+        public const string Version = "0.0.2T";
 
         /// <summary>Full expansion for README / log only — never shown on the GUI chrome.</summary>
         public const string FullExpansion = "Realtime Aerial Detection And Ranging (R.A.D.A.R.)";
@@ -215,7 +215,7 @@ namespace RDA
                 }
 
                 // Hotkey may still flip ShowWindow, but draw only while seated in aircraft
-                // (hide on eject / die / spectate / menu; show again on board).
+                // (hide on eject / destroyed / menu; show again on board). Never force ShowWindow false.
                 bool drawHud = _contacts != null && _contacts.ShouldDrawHud;
                 if (drawHud && _gui != null && RDA.Config.ShowWindow.Value)
                 {

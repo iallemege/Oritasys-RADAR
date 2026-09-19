@@ -63,6 +63,8 @@ namespace RDA
         private float _nextDatalinkIngest;
         private bool _wasInAircraft;
         private object? _lastBoardedAircraft;
+        private bool? _lastSeatGate;
+        private string _lastSeatReason = "";
 
         /// <summary>Cached raw unit for world TRK label between contact ticks.</summary>
         internal object? LockedUnitRaw { get; private set; }
@@ -150,15 +152,23 @@ namespace RDA
                 return;
             }
 
-            // Seat / eject / dead / spectate gate (soft reflection).
-            bool seated = EvaluateInAircraft();
+            // Seat gate: local aircraft + !HasEjected (Nuclear Option). Soft reflection.
+            bool seated = EvaluateInAircraft(out string seatReason);
+            if (_lastSeatGate != seated || _lastSeatReason != seatReason)
+            {
+                Log.Info("Seat gate → " + (seated ? "SHOW" : "HIDE") + " (" + seatReason + ")");
+                _lastSeatGate = seated;
+                _lastSeatReason = seatReason;
+            }
+
             if (!seated)
             {
-                HandleLeftAircraft("eject / dead / spectate");
+                HandleLeftAircraft(seatReason);
                 return;
             }
 
             // Fresh board → wipe stale lock/TRK/RWR so re-enter is clean.
+            // Intentionally do NOT force ShowWindow=false on board (hotkey preference preserved).
             if (!_wasInAircraft || !ReferenceEquals(_lastBoardedAircraft, _player))
             {
                 ReinitRadarOnBoard();
@@ -469,16 +479,51 @@ namespace RDA
             _modes.ActiveProfile = _activeProfile;
         }
 
-        private bool EvaluateInAircraft()
+        private bool EvaluateInAircraft(out string reason)
         {
             if (_player == null)
             {
+                reason = "menu / no aircraft";
+                return false;
+            }
+
+            try
+            {
+                if (_player is UnityEngine.Object uo && uo == null)
+                {
+                    reason = "aircraft destroyed";
+                    return false;
+                }
+            }
+            catch
+            {
+                reason = "aircraft destroyed";
+                return false;
+            }
+
+            bool? ejected = GameReflect.TryHasEjected(_player);
+            if (ejected == true)
+            {
+                reason = "HasEjected";
+                return false;
+            }
+
+            if (GameReflect.TryIsUnitDestroyedOrDead(_player) == true)
+            {
+                reason = "destroyed / dead";
                 return false;
             }
 
             bool? seated = GameReflect.TryIsPlayerSeatedInAircraft(_player);
-            // Fail-soft: unknown → treat as seated when we have a live aircraft ref.
-            return !seated.HasValue || seated.Value;
+            if (seated == false)
+            {
+                reason = ejected == false ? "left aircraft" : "not seated";
+                return false;
+            }
+
+            // Fail-soft: unknown → seated when live local aircraft and !HasEjected.
+            reason = ejected == false ? "seated (!HasEjected)" : "seated (live aircraft)";
+            return true;
         }
 
         private void HandleLeftAircraft(string reason)
@@ -512,6 +557,7 @@ namespace RDA
             _wasInAircraft = false;
             _lastBoardedAircraft = null;
             ClearOwnshipProfileCache();
+            // Keep _lastSeatGate so flip log still fires on re-board; do not touch ShowWindow.
             PublishSnapshot();
         }
 
@@ -589,24 +635,23 @@ namespace RDA
                 return;
             }
 
-            int cap = Mathf.Max(4, Config.DatalinkMaxMarkers.Value);
+            // Hard cap drawn/ingested DL contacts (BepInEx Datalink.DatalinkMaxMarkers, default 24, range 4–128).
+            int cap = Mathf.Clamp(Config.DatalinkMaxMarkers.Value, 4, 128);
             if (Config.PerfMode.Value)
             {
                 cap = Mathf.Min(cap, 18);
             }
 
-            if (!Config.DatalinkPreferHighValue.Value && _datalinkScratch.Count <= cap)
+            if (Config.DatalinkPreferHighValue.Value || _datalinkScratch.Count > cap)
             {
-                return;
+                _datalinkScratch.Sort((a, b) =>
+                {
+                    int pa = DlPriority(a);
+                    int pb = DlPriority(b);
+                    int cmp = pa.CompareTo(pb);
+                    return cmp != 0 ? cmp : a.RangeMeters.CompareTo(b.RangeMeters);
+                });
             }
-
-            _datalinkScratch.Sort((a, b) =>
-            {
-                int pa = DlPriority(a);
-                int pb = DlPriority(b);
-                int cmp = pa.CompareTo(pb);
-                return cmp != 0 ? cmp : a.RangeMeters.CompareTo(b.RangeMeters);
-            });
 
             if (_datalinkScratch.Count > cap)
             {
@@ -648,7 +693,7 @@ namespace RDA
                 Log.Debug("RWR missileAttacks soft-fail: " + ex.Message);
             }
 
-            // Contacts / scene units that have lockedTarget / target == ownship
+            // Seeker / illuminate locks on ownship only (cut false positives from loose AI "target").
             int ownId = GameReflect.IdOf(_player);
             for (int i = 0; i < _contacts.Count; i++)
             {
@@ -662,25 +707,44 @@ namespace RDA
                 {
                     if (GameReflect.ReadBool(c.Raw, false,
                             "lockedOnPlayer", "LockedOnPlayer", "isAttackingPlayer", "attackingPlayer",
-                            "targetingPlayer", "TargetingPlayer", "hasLockOnPlayer", "illuminatingPlayer"))
+                            "targetingPlayer", "TargetingPlayer", "hasLockOnPlayer", "illuminatingPlayer",
+                            "isTarget", "IsTarget"))
                     {
                         RwrKind k = c.Kind == ContactKind.Missile ? RwrKind.Missile : RwrKind.Lock;
                         _rwr.IngestOwnshipThreat(c.Raw, k, flash: true);
                         continue;
                     }
 
+                    // Prefer explicit lock/seeker members — not generic AI "target"/"Target".
                     object? tgt = GameReflect.FindMember(c.Raw.GetType(),
-                        "target", "Target", "currentTarget", "lockedTarget", "LockedTarget")?.Get(c.Raw);
+                        "lockedTarget", "LockedTarget", "currentTarget", "CurrentTarget",
+                        "seekerTarget", "SeekerTarget", "trackedTarget", "TrackedTarget")?.Get(c.Raw);
                     if (tgt != null &&
                         (ReferenceEquals(tgt, _player) || GameReflect.IdOf(tgt) == ownId))
                     {
                         RwrKind k = c.Kind == ContactKind.Missile ? RwrKind.Missile : RwrKind.Lock;
                         _rwr.IngestOwnshipThreat(c.Raw, k, flash: true);
+                        continue;
+                    }
+
+                    // Missile seekers: nested seeker.lockedTarget == ownship
+                    if (c.Kind == ContactKind.Missile)
+                    {
+                        object? seeker = GameReflect.FindMember(c.Raw.GetType(),
+                            "seeker", "Seeker", "missileSeeker", "MissileSeeker")?.Get(c.Raw);
+                        object? sTgt = seeker == null ? null : GameReflect.FindMember(seeker.GetType(),
+                            "lockedTarget", "LockedTarget", "currentTarget", "CurrentTarget",
+                            "target", "Target")?.Get(seeker);
+                        if (sTgt != null &&
+                            (ReferenceEquals(sTgt, _player) || GameReflect.IdOf(sTgt) == ownId))
+                        {
+                            _rwr.IngestOwnshipThreat(c.Raw, RwrKind.Missile, flash: true);
+                        }
                     }
                 }
                 catch
                 {
-                    // ignored
+                    // soft-fail
                 }
             }
         }
