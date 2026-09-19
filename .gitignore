@@ -1,0 +1,10 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.idea/
+Directory.Build.user.props
+*.dll
+*.pdb
+*.deps.json

@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- Copy to Directory.Build.user.props (gitignored) if your install is not the default. -->
+    <NuclearOptionDir>D:/Steam/steamapps/common/Nuclear Option</NuclearOptionDir>
+  </PropertyGroup>
+</Project>

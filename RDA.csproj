@@ -1,0 +1,88 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>10</LangVersion>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>RDA</AssemblyName>
+    <RootNamespace>RDA</RootNamespace>
+    <!-- Keep assembly metadata numeric; the plugin/display version includes the T suffix. -->
+    <Version>0.0.1</Version>
+    <AssemblyVersion>0.0.1.0</AssemblyVersion>
+    <FileVersion>0.0.1.0</FileVersion>
+    <InformationalVersion>0.0.1T</InformationalVersion>
+    <Product>Oritasy's RADAR</Product>
+    <Authors>iallemmege</Authors>
+    <Description>Oritasy's RADAR — Realtime Aerial Detection And Ranging (R.A.D.A.R.). Independent BepInEx 5 PPI overlay for Nuclear Option.</Description>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <DebugType>portable</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <GameManaged Condition="Exists('$(NuclearOptionDir)\NuclearOption_Data\Managed\UnityEngine.CoreModule.dll')">$(NuclearOptionDir)\NuclearOption_Data\Managed</GameManaged>
+    <GameManaged Condition="'$(GameManaged)' == '' AND Exists('$(NuclearOptionDir)\Nuclear Option_Data\Managed\UnityEngine.CoreModule.dll')">$(NuclearOptionDir)\Nuclear Option_Data\Managed</GameManaged>
+    <GameManaged Condition="'$(GameManaged)' == '' AND Exists('$(NuclearOptionDir)/NuclearOption_Data/Managed/UnityEngine.CoreModule.dll')">$(NuclearOptionDir)/NuclearOption_Data/Managed</GameManaged>
+    <BepInExCoreDir Condition="Exists('$(NuclearOptionDir)\BepInEx\core\BepInEx.dll')">$(NuclearOptionDir)\BepInEx\core</BepInExCoreDir>
+    <BepInExCoreDir Condition="'$(BepInExCoreDir)' == '' AND Exists('$(NuclearOptionDir)/BepInEx/core/BepInEx.dll')">$(NuclearOptionDir)/BepInEx/core</BepInExCoreDir>
+    <HasGameUnity Condition="'$(GameManaged)' != ''">true</HasGameUnity>
+    <HasBepInEx Condition="'$(BepInExCoreDir)' != ''">true</HasBepInEx>
+  </PropertyGroup>
+
+  <!-- Prefer local BepInEx 5 from the game install when present. -->
+  <ItemGroup Condition="'$(HasBepInEx)' == 'true'">
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExCoreDir)\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExCoreDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(HasBepInEx)' != 'true'">
+    <PackageReference Include="BepInEx.Core" Version="5.4.21" />
+  </ItemGroup>
+
+  <!-- Prefer game Unity assemblies when Nuclear Option is installed. -->
+  <ItemGroup Condition="'$(HasGameUnity)' == 'true'">
+    <Reference Include="UnityEngine">
+      <HintPath>$(GameManaged)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameManaged)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(GameManaged)\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GameManaged)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(GameManaged)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule" Condition="Exists('$(GameManaged)\UnityEngine.PhysicsModule.dll')">
+      <HintPath>$(GameManaged)\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Optional compile-time peek only. Runtime access is reflection. -->
+    <Reference Include="Assembly-CSharp" Condition="Exists('$(GameManaged)\Assembly-CSharp.dll')">
+      <HintPath>$(GameManaged)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(HasGameUnity)' != 'true'">
+    <PackageReference Include="UnityEngine.Modules" Version="2021.3.33" IncludeAssets="compile" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

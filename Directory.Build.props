@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- Override in Directory.Build.user.props or with /p:NuclearOptionDir=... -->
+    <NuclearOptionDir Condition="'$(NuclearOptionDir)' == ''">D:/Steam/steamapps/common/Nuclear Option</NuclearOptionDir>
+  </PropertyGroup>
+</Project>
