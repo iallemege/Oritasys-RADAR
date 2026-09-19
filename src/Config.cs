@@ -19,6 +19,7 @@ namespace RDA
         internal static ConfigEntry<KeyboardShortcut> ScanCenterHotkey = null!;
         internal static ConfigEntry<KeyboardShortcut> CycleWaveformHotkey = null!;
         internal static ConfigEntry<KeyboardShortcut> CycleAcmDesignateHotkey = null!;
+        internal static ConfigEntry<KeyboardShortcut> SettingsHotkey = null!;
         internal static ConfigEntry<bool> ShowWindow = null!;
         internal static ConfigEntry<string> HudGateMode = null!;
         internal static ConfigEntry<bool> ForceShowHud = null!;
@@ -43,10 +44,12 @@ namespace RDA
         internal static ConfigEntry<float> WindowY = null!;
         internal static ConfigEntry<float> WindowWidth = null!;
         internal static ConfigEntry<float> WindowHeight = null!;
+        internal static ConfigEntry<float> WindowOpacity = null!;
         internal static ConfigEntry<float> AcmAltitudeBandM = null!;
         internal static ConfigEntry<float> AcmLockDwellSec = null!;
         internal static ConfigEntry<float> AcmPersistenceSec = null!;
         internal static ConfigEntry<float> TwsLockDwellSec = null!;
+        internal static ConfigEntry<bool> TwsAutoLock = null!;
         internal static ConfigEntry<float> StandbyRcsFactor = null!;
         internal static ConfigEntry<float> AcmBreakSec = null!;
         internal static ConfigEntry<float> ElevStepDeg = null!;
@@ -102,9 +105,10 @@ namespace RDA
             ElevAutoHotkey = file.Bind("Hotkeys", "ElevAuto", new KeyboardShortcut(KeyCode.None), "Optional remap for elev auto toggle (digit 9 always works).");
             ScanLeftHotkey = file.Bind("Hotkeys", "ScanLeft", new KeyboardShortcut(KeyCode.Semicolon), "Slew scan center left (SRC/TWS). Semicolon (;).");
             ScanRightHotkey = file.Bind("Hotkeys", "ScanRight", new KeyboardShortcut(KeyCode.Quote), "Slew scan center right (SRC/TWS). Apostrophe (').");
-            ScanCenterHotkey = file.Bind("Hotkeys", "ScanCenter", new KeyboardShortcut(KeyCode.Slash), "Reset scan center to nose / clear ACM manual override.");
+            ScanCenterHotkey = file.Bind("Hotkeys", "ScanCenter", new KeyboardShortcut(KeyCode.None), "Reset scan center to nose / clear ACM manual override. (Default none — `/` opens Settings.)");
             CycleWaveformHotkey = file.Bind("Hotkeys", "CycleWaveform", new KeyboardShortcut(KeyCode.F8), "Cycle radar waveform PULSE → PD → CW.");
             CycleAcmDesignateHotkey = file.Bind("Hotkeys", "CycleAcmDesignate", new KeyboardShortcut(KeyCode.R), "R: cycle vanilla WeaponManager.targetList (primary=[0]) so missiles guide; ACM may AddTargetList designate when list empty. Syncs LK/TRK.");
+            SettingsHotkey = file.Bind("Hotkeys", "Settings", new KeyboardShortcut(KeyCode.Slash), "Open/close Oritasy-style RADAR settings (window position + opacity). Default `/`.");
 
             ShowWindow = file.Bind("Display", "ShowWindow", true, "Start with the overlay visible.");
             HudGateMode = file.Bind("Display", "HudGateMode", "AircraftPresent",
@@ -135,11 +139,15 @@ namespace RDA
             WindowY = file.Bind("Display", "WindowY", 24f, "Overlay window Y.");
             WindowWidth = file.Bind("Display", "WindowWidth", 680f, "Overlay window width (default raised in 1.0.3 for strip text; saved larger sizes kept).");
             WindowHeight = file.Bind("Display", "WindowHeight", 520f, "Overlay window height (default raised in 1.0.3 for taller data strip; saved larger sizes kept).");
+            WindowOpacity = file.Bind("Display", "WindowOpacity", 0.92f,
+                new ConfigDescription("MFD window opacity / transparency (0.2 = mostly see-through, 1.0 = opaque).", new AcceptableValueRange<float>(0.2f, 1f)));
 
             AcmAltitudeBandM = file.Bind("Radar", "AcmAltitudeBandM", 1200f, new ConfigDescription("ACM A/G same-height gate (meters). Keep surface contacts near ground (alt ≤ band) or within ±band of ownship altitude. High air-altitude unknowns are dropped.", new AcceptableValueRange<float>(200f, 5000f)));
             AcmLockDwellSec = file.Bind("Radar", "AcmLockDwellSec", 0.2f, new ConfigDescription("Legacy alias; ACM is A/G designate (no air auto-lock). Prefer TwsLockDwellSec for air STT.", new AcceptableValueRange<float>(0.05f, 5f)));
             AcmPersistenceSec = file.Bind("Radar", "AcmPersistenceSec", 0.8f, new ConfigDescription("ACM phosphor trail TTL (seconds). Swept speckles/contacts fade after the scan bar passes.", new AcceptableValueRange<float>(0.2f, 2.5f)));
             TwsLockDwellSec = file.Bind("Radar", "TwsLockDwellSec", 0.25f, new ConfigDescription("Seconds an air contact must stay nearest the TWS scan center before auto-lock (air auto-lock).", new AcceptableValueRange<float>(0.05f, 5f)));
+            TwsAutoLock = file.Bind("Radar", "TwsAutoLock", true,
+                "TWS (对空): auto-lock nearest + highest-threat air unit via vanilla WeaponManager.targetList / AddTargetList (WSO-style). Default true.");
             StandbyRcsFactor = file.Bind("Radar", "StandbyRcsFactor", 0.8f, new ConfigDescription("Local-player RCS scale while radar is STBY (0.8 = −20%). AI unaffected.", new AcceptableValueRange<float>(0.1f, 1f)));
             AcmBreakSec = file.Bind("Radar", "AcmBreakSec", 0.8f, new ConfigDescription("Seconds out of gate before ACM A/G or TWS lock breaks.", new AcceptableValueRange<float>(0.1f, 5f)));
             ElevStepDeg = file.Bind("Radar", "ElevStepDeg", 5f, new ConfigDescription("Manual antenna elevation step (degrees).", new AcceptableValueRange<float>(1f, 30f)));

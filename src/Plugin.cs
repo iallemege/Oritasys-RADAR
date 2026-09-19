@@ -16,8 +16,8 @@ namespace RDA
         public const string DisplayName = "Oritasy's RADAR";
         public const string BiaRuntimeGuid = "bia.runtime";
         // BepInEx parses this value as SemVer; keep the brand suffix in DisplayVersion.
-        public const string Version = "0.0.5";
-        public const string DisplayVersion = "0.0.5T";
+        public const string Version = "0.0.6";
+        public const string DisplayVersion = "0.0.6T";
 
         /// <summary>Full expansion for README / log only — never shown on the GUI chrome.</summary>
         public const string FullExpansion = "Realtime Aerial Detection And Ranging (R.A.D.A.R.)";
@@ -29,6 +29,7 @@ namespace RDA
         private ContactProvider? _contacts;
         private ModeState? _modes;
         private RwrPanel? _rwr;
+        private SettingsMenu? _settings;
         private float _nextWindowPersist;
         private float _nextHudDiag;
         private bool _stylesApplied;
@@ -55,6 +56,7 @@ namespace RDA
             _rwr = new RwrPanel();
             _contacts = new ContactProvider(_modes, _rwr);
             _gui = new RadarGui(_modes, _contacts, _rwr);
+            _settings = new SettingsMenu();
 
             // Heavy Harmony deferred to Start (one/two frames) so Oritasy / OritasyHud finish Awake first.
             // Visibility fixes (GUI.depth / HudGateMode) are the primary compat path — do not disable OritasyHud.
@@ -145,6 +147,12 @@ namespace RDA
                 if (RDA.Config.ToggleHotkey.Value.IsDown())
                 {
                     RDA.Config.ShowWindow.Value = !RDA.Config.ShowWindow.Value;
+                }
+
+                if (RDA.Config.SettingsHotkey.Value.IsDown())
+                {
+                    _settings ??= new SettingsMenu();
+                    _settings.Toggle();
                 }
 
                 if (_modes == null || _contacts == null || _rwr == null)
@@ -357,6 +365,12 @@ namespace RDA
                 if (drawHud && _contacts != null && _modes != null)
                 {
                     WorldTrkLabelHud.Draw(_modes, _contacts);
+                }
+
+                // Settings menu: available whenever `/` toggled — does not require aircraft.
+                if (_settings != null && _settings.IsOpen)
+                {
+                    _settings.Draw(_gui);
                 }
             }
             catch (System.Exception ex)

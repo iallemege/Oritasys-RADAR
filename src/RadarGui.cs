@@ -40,7 +40,25 @@ namespace RDA
         {
             EnsureWindowOnScreen();
             // Empty title — fully custom chrome inside.
-            _window = GUI.Window(WindowId, _window, DrawContents, GUIContent.none, ScopeDraw.WindowStyle);
+            Color prev = GUI.color;
+            float opacity = Mathf.Clamp(Config.WindowOpacity != null ? Config.WindowOpacity.Value : 0.92f, 0.2f, 1f);
+            GUI.color = new Color(prev.r, prev.g, prev.b, prev.a * opacity);
+            try
+            {
+                _window = GUI.Window(WindowId, _window, DrawContents, GUIContent.none, ScopeDraw.WindowStyle);
+            }
+            finally
+            {
+                GUI.color = prev;
+            }
+        }
+
+        /// <summary>Live apply settings-menu position to the MFD rect.</summary>
+        internal void ApplyWindowPosition(float x, float y)
+        {
+            _window.x = x;
+            _window.y = y;
+            EnsureWindowOnScreen();
         }
 
         /// <summary>Reset window if NaN or completely off Screen.width/height.</summary>

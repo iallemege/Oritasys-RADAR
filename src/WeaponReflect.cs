@@ -416,6 +416,82 @@ namespace RDA
         }
 
         /// <summary>
+        /// WSO-style real lock: push <paramref name="unit"/> onto WeaponManager.targetList as primary ([0])
+        /// via AddTargetList / list rewrite — same path as manual paint. Fail-soft.
+        /// </summary>
+        internal static bool ApplyPrimaryLock(object? aircraft, object? unit)
+        {
+            EnsureDiscovered();
+            if (aircraft == null || unit == null)
+            {
+                return false;
+            }
+
+            if (unit is UnityEngine.Object uo && uo == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (TryGetPrimaryTargetUnit(aircraft, out object? primary) && primary != null)
+                {
+                    int pid = GameReflect.IdOf(primary);
+                    int nid = GameReflect.IdOf(unit);
+                    if (pid != 0 && pid == nid)
+                    {
+                        return true; // already primary
+                    }
+                }
+
+                object? wm = ResolveWeaponManager(aircraft);
+                if (wm == null)
+                {
+                    return false;
+                }
+
+                if (!_wmTargetListCached)
+                {
+                    Type wmType = wm.GetType();
+                    _wmGetTargetList = GameReflect.FindMember(wmType,
+                        "GetTargetList", "get_TargetList", "getTargetList");
+                    _wmTargetListField = GameReflect.FindMember(wmType,
+                        "targetList", "TargetList", "targets", "Targets");
+                    _wmTargetListCached = true;
+                }
+
+                object? listObj = _wmGetTargetList?.Get(wm) ?? _wmTargetListField?.Get(wm);
+
+                // Prefer single primary: clear then AddTargetList (missile guide = [0]).
+                bool hadEntries = false;
+                foreach (object _ in EnumerateTargetList(aircraft))
+                {
+                    hadEntries = true;
+                    break;
+                }
+
+                if (hadEntries)
+                {
+                    TryListClear(listObj);
+                }
+
+                bool ok = TryAddTarget(wm, listObj, unit);
+                if (ok)
+                {
+                    InvokeTargetListChanged(wm);
+                    Log.Info("ApplyPrimaryLock — vanilla targetList[0] set for missile guide");
+                }
+
+                return ok;
+            }
+            catch (Exception ex)
+            {
+                Log.Debug("ApplyPrimaryLock soft-fail: " + ex.Message);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Cycle vanilla WeaponManager.targetList so missiles guide on the new primary ([0]).
         /// count≥2: rotate [0] to end (index1 becomes primary). count==0: optionally Add ACM designate.
         /// count==1: replace primary with next ACM surface candidate when provided.

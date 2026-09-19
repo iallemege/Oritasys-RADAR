@@ -58,9 +58,12 @@ namespace RDA
         private WeaponSnapshot _cachedWeapon;
         private bool _weaponLogged;
         private readonly List<RadarContact> _datalinkScratch = new List<RadarContact>(64);
+        /// <summary>Persistent DL contacts between throttled ingest ticks (prevents PPI flicker).</summary>
+        private readonly List<RadarContact> _datalinkHeld = new List<RadarContact>(64);
         private object? _networkHq;
         private int _datalinkCount;
         private float _nextDatalinkIngest;
+        private float _nextTwsAutoLock;
         private bool _wasInAircraft;
         private object? _lastBoardedAircraft;
         private bool? _lastSeatGate;
@@ -286,30 +289,36 @@ namespace RDA
             _datalinkCount = 0;
             if (!RDA.Config.UseVanillaDatalink.Value)
             {
+                _datalinkHeld.Clear();
                 return;
             }
 
             // Throttle dense HQ ingest independently of contact Hz.
+            // Held list is refreshed only when due; every tick merges held into _contacts.
             float dlHz = Mathf.Clamp(RDA.Config.DatalinkRefreshHz.Value, 1f, 30f);
             float dlInterval = 1f / dlHz;
             bool due = Time.unscaledTime >= _nextDatalinkIngest;
-            if (!due)
+            if (due)
             {
-                // Still count existing DL contacts for status strip.
-                int held = 0;
-                for (int i = 0; i < _contacts.Count; i++)
-                {
-                    if (_contacts[i].FromDatalink)
-                    {
-                        held++;
-                    }
-                }
-
-                _datalinkCount = held;
-                return;
+                _nextDatalinkIngest = Time.unscaledTime + dlInterval;
+                RefreshDatalinkHeld(markCone);
+            }
+            else if (markCone)
+            {
+                // Keep InCone flags fresh relative to current scan without re-ingest.
+                UpdateHeldDatalinkConeFlags();
             }
 
-            _nextDatalinkIngest = Time.unscaledTime + dlInterval;
+            // Always merge persistent DL into this frame's contacts (after Clear + own-radar).
+            MergeHeldDatalinkIntoContacts();
+        }
+
+        /// <summary>
+        /// Replace _datalinkHeld from HQ ingest. Locked / RWR DL entries never dropped mid-hold
+        /// if missing from this refresh. Light-lerp world positions when IDs match.
+        /// </summary>
+        private void RefreshDatalinkHeld(bool markCone)
+        {
             _datalinkScratch.Clear();
 
             DatalinkBridge.IngestTracks(
@@ -320,7 +329,6 @@ namespace RDA
                 OwnshipSpeedMps,
                 _datalinkScratch);
 
-            // Drop DL rows that fail friend/air range filters before merge.
             ApplyDisplayRangeFilters(_datalinkScratch);
 
             if (markCone)
@@ -339,32 +347,104 @@ namespace RDA
                 }
             }
 
-            // Hard priority cull + cap before merge (fewer symbols/labels).
             CullDatalinkScratchHard();
 
-            // Remove stale DL-only contacts that were not refreshed this ingest.
-            HashSet<int> freshDl = new HashSet<int>();
+            HashSet<int> freshIds = new HashSet<int>();
             for (int i = 0; i < _datalinkScratch.Count; i++)
             {
-                freshDl.Add(_datalinkScratch[i].Id);
+                freshIds.Add(_datalinkScratch[i].Id);
             }
 
-            for (int i = _contacts.Count - 1; i >= 0; i--)
+            // Preserve locked / RWR DL from previous hold if not in this ingest.
+            var preserved = new List<RadarContact>(8);
+            for (int i = 0; i < _datalinkHeld.Count; i++)
             {
-                if (_contacts[i].FromDatalink && !freshDl.Contains(_contacts[i].Id))
+                RadarContact h = _datalinkHeld[i];
+                if (freshIds.Contains(h.Id))
                 {
-                    // Keep if locked / RWR threat
-                    bool keep = _contacts[i].Locked ||
-                                (_modes.Locked && _modes.LockedContactId == _contacts[i].Id) ||
-                                (_rwr != null && _rwr.ContainsId(_contacts[i].Id));
-                    if (!keep)
-                    {
-                        _contacts.RemoveAt(i);
-                    }
+                    continue;
+                }
+
+                bool keep = h.Locked ||
+                            (_modes.Locked && _modes.LockedContactId == h.Id) ||
+                            (_rwr != null && _rwr.ContainsId(h.Id));
+                if (keep)
+                {
+                    preserved.Add(h);
                 }
             }
 
-            DatalinkBridge.MergePreferOwnRadar(_contacts, _datalinkScratch);
+            // Light lerp positions when the same ID is refreshed.
+            var prevById = new Dictionary<int, RadarContact>(_datalinkHeld.Count);
+            for (int i = 0; i < _datalinkHeld.Count; i++)
+            {
+                prevById[_datalinkHeld[i].Id] = _datalinkHeld[i];
+            }
+
+            const float lerpT = 0.35f;
+            for (int i = 0; i < _datalinkScratch.Count; i++)
+            {
+                RadarContact n = _datalinkScratch[i];
+                if (prevById.TryGetValue(n.Id, out RadarContact prev))
+                {
+                    Vector3 lerped = Vector3.Lerp(prev.WorldPosition, n.WorldPosition, lerpT);
+                    n.WorldPosition = lerped;
+                    Vector3 delta = lerped - OwnshipPosition;
+                    float range = delta.magnitude;
+                    n.RangeMeters = range;
+                    float absBearing = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
+                    n.AbsoluteBearingDeg = absBearing;
+                    n.AzimuthDeg = Normalize180(absBearing - OwnshipHeadingDeg);
+                    n.ElevationDeg = range > 0.01f
+                        ? Mathf.Asin(Mathf.Clamp(delta.y / range, -1f, 1f)) * Mathf.Rad2Deg
+                        : 0f;
+                    n.AltitudeMeters = lerped.y;
+                    _datalinkScratch[i] = n;
+                }
+            }
+
+            _datalinkHeld.Clear();
+            for (int i = 0; i < _datalinkScratch.Count; i++)
+            {
+                _datalinkHeld.Add(_datalinkScratch[i]);
+            }
+
+            for (int i = 0; i < preserved.Count; i++)
+            {
+                _datalinkHeld.Add(preserved[i]);
+            }
+        }
+
+        private void UpdateHeldDatalinkConeFlags()
+        {
+            if (_datalinkHeld.Count == 0)
+            {
+                return;
+            }
+
+            float halfFov = EffectiveHalfFovDeg();
+            float maxRange = _modes.DisplayRangeKm() * 1000f;
+            float antennaEl = _modes.AntennaElevationDeg;
+            float elevGate = Mathf.Max(1f, halfFov);
+            float scanCenter = _modes.EffectiveScanCenterAzimuthDeg();
+            for (int i = 0; i < _datalinkHeld.Count; i++)
+            {
+                RadarContact c = _datalinkHeld[i];
+                float azAbs = Mathf.Abs(Normalize180(c.AzimuthDeg - scanCenter));
+                float elOff = Mathf.Abs(c.ElevationDeg - antennaEl);
+                c.InCone = azAbs <= halfFov + 0.5f && elOff <= elevGate + 0.5f && c.RangeMeters <= maxRange;
+            }
+        }
+
+        private void MergeHeldDatalinkIntoContacts()
+        {
+            if (_datalinkHeld.Count == 0)
+            {
+                _datalinkCount = 0;
+                return;
+            }
+
+            DatalinkBridge.MergePreferOwnRadar(_contacts, _datalinkHeld);
             int dl = 0;
             for (int i = 0; i < _contacts.Count; i++)
             {
@@ -616,6 +696,7 @@ namespace RDA
             TerrainRangeMeters = float.NaN;
             LockedUnitRaw = null;
             _contacts.Clear();
+            _datalinkHeld.Clear();
             if (_modes.Locked || _modes.SoftTrkFromVanilla)
             {
                 _modes.ClearVanillaLock(restoreMode: false);
@@ -650,8 +731,10 @@ namespace RDA
             LockedUnitRaw = null;
             _contacts.Clear();
             _datalinkScratch.Clear();
+            _datalinkHeld.Clear();
             _datalinkCount = 0;
             _nextDatalinkIngest = 0f;
+            _nextTwsAutoLock = 0f;
             _rwr?.Clear();
             WorldTrkLabelHud.ClearCache();
             Log.Info("Radar re-init on aircraft board");
@@ -1490,16 +1573,14 @@ namespace RDA
         }
 
         /// <summary>
-        /// TWS air search: pick nearest angular error to scan center for ACQ highlight.
-        /// Does not invent LOCK — SyncVanillaTargetLock mirrors WeaponManager.targetList.
-        /// Multi-track retained up to TWS cap.
+        /// TWS (对空): score nearest + highest-threat air contacts, then push real vanilla lock
+        /// via WeaponManager.targetList / AddTargetList (WSO ApplyWsoLock / ScoreAirTarget style).
+        /// SyncVanillaTargetLock reads back for LK/TRK. Config.TwsAutoLock default true.
         /// </summary>
         private void ApplyTwsAirAutoLockLogic(float halfFov, float elevGate)
         {
             float scanCenter = _modes.EffectiveScanCenterAzimuthDeg();
             float dt = _heavyDt;
-            float dwellNeed = Mathf.Max(0.05f, Config.TwsLockDwellSec.Value);
-            float breakNeed = Mathf.Max(0.1f, Config.AcmBreakSec.Value);
             int cap = Mathf.Max(1, _modes.Limits.MaxTracks);
 
             if (_modes.Locked && _modes.LockedContactId is int lockedId)
@@ -1508,7 +1589,6 @@ namespace RDA
                 if (locked == null)
                 {
                     _modes.AcmOutGateElapsed += dt;
-                    // Vanilla SyncVanillaTargetLock owns ClearLock when targetList empties.
                 }
                 else
                 {
@@ -1524,15 +1604,12 @@ namespace RDA
                     else
                     {
                         _modes.AcmOutGateElapsed += dt;
-                        // Out-of-gate: keep RDA lock while vanilla targetList still has entry.
                     }
                 }
 
-                // Keep multi-track TWS picture while locked
                 _contacts.Sort((a, b) => a.RangeMeters.CompareTo(b.RangeMeters));
                 if (_contacts.Count > cap)
                 {
-                    // Prefer keeping the locked contact
                     RadarContact? keep = FindById(lockedId);
                     _contacts.RemoveRange(cap, _contacts.Count - cap);
                     if (keep != null && FindById(keep.Id) == null)
@@ -1546,26 +1623,27 @@ namespace RDA
                 }
 
                 _modes.AcmCandidateId = _modes.LockedContactId;
+
+                // Still allow TWS retarget to a better air threat while locked (rate-limited).
+                if (Config.TwsAutoLock.Value)
+                {
+                    TryTwsAutoLock(halfFov, elevGate, scanCenter);
+                }
+
                 return;
             }
 
-            // Auto-lock search: angular error to scan center (az + el), not range-first
+            // Unlocked: ACQ highlight + optional real auto-lock.
             var inCone = new System.Collections.Generic.List<RadarContact>();
             foreach (RadarContact c in _contacts)
             {
-                if (c.InCone)
+                if (c.InCone && !IsOwnshipOrCrewContact(c))
                 {
                     inCone.Add(c);
                 }
             }
 
-            inCone.Sort((a, b) =>
-            {
-                float sa = Mathf.Abs(Normalize180(a.AzimuthDeg - scanCenter)) + Mathf.Abs(a.ElevationDeg - _modes.AntennaElevationDeg);
-                float sb = Mathf.Abs(Normalize180(b.AzimuthDeg - scanCenter)) + Mathf.Abs(b.ElevationDeg - _modes.AntennaElevationDeg);
-                int cmp = sa.CompareTo(sb);
-                return cmp != 0 ? cmp : a.RangeMeters.CompareTo(b.RangeMeters);
-            });
+            inCone.Sort((a, b) => ScoreTwsAirThreat(b).CompareTo(ScoreTwsAirThreat(a)));
 
             if (inCone.Count == 0)
             {
@@ -1591,17 +1669,197 @@ namespace RDA
                 _modes.AcmDwellElapsed += dt;
             }
 
-            // Highlight / TWS ACQ only — do NOT invent LOCK into WeaponManager / ModeState.
-            // LK LED + TRK page require vanilla targetList nonempty (SyncVanillaTargetLock).
-            if (_modes.AcmDwellElapsed >= dwellNeed)
+            if (Config.TwsAutoLock.Value)
             {
-                // Keep candidate; StatusLabel shows TWS ACQ while unlocked.
+                TryTwsAutoLock(halfFov, elevGate, scanCenter);
             }
 
             _contacts.Sort((a, b) => a.RangeMeters.CompareTo(b.RangeMeters));
             if (_contacts.Count > cap)
             {
                 _contacts.RemoveRange(cap, _contacts.Count - cap);
+            }
+        }
+
+        /// <summary>
+        /// Score ≈ threat-high + range-near (+ closing + missile/fighter bonuses). Prefer foe air.
+        /// </summary>
+        private float ScoreTwsAirThreat(RadarContact c)
+        {
+            if (IsOwnshipOrCrewContact(c))
+            {
+                return float.NegativeInfinity;
+            }
+
+            // Friend never auto-locked.
+            if (c.Iff == IffRelation.Friend)
+            {
+                return float.NegativeInfinity;
+            }
+
+            float threat = 1f;
+            if (c.Iff == IffRelation.Foe)
+            {
+                threat = 4f;
+            }
+            else if (c.Iff == IffRelation.Unknown)
+            {
+                threat = 2.2f;
+            }
+            else if (c.Iff == IffRelation.Neutral)
+            {
+                threat = 0.6f;
+            }
+
+            if (c.Kind == ContactKind.Missile)
+            {
+                threat += 1.5f;
+            }
+            else if (c.Kind == ContactKind.Air)
+            {
+                threat += 1f;
+                string lab = (c.Label ?? string.Empty).ToLowerInvariant();
+                if (lab.IndexOf("fighter", System.StringComparison.Ordinal) >= 0 ||
+                    lab.IndexOf("interceptor", System.StringComparison.Ordinal) >= 0 ||
+                    lab.IndexOf("mig", System.StringComparison.Ordinal) >= 0 ||
+                    lab.IndexOf("su-", System.StringComparison.Ordinal) >= 0 ||
+                    lab.IndexOf("f-", System.StringComparison.Ordinal) >= 0)
+                {
+                    threat += 0.75f;
+                }
+            }
+
+            if (_rwr != null && _rwr.ContainsId(c.Id))
+            {
+                threat += 2f;
+            }
+
+            float range = Mathf.Max(c.RangeMeters, 1f);
+            float score = threat / range * 1000f; // normalize toward km-ish
+
+            // Closing bonus (positive closing = approaching)
+            if (c.ClosingSpeedMps > 20f)
+            {
+                score += Mathf.Clamp(c.ClosingSpeedMps * 0.01f, 0f, 2.5f);
+            }
+
+            // Prefer in-cone
+            if (c.InCone)
+            {
+                score += 0.5f;
+            }
+
+            // Prefer nearer angular error to scan center as mild tie-break
+            float scanCenter = _modes.EffectiveScanCenterAzimuthDeg();
+            float ang = Mathf.Abs(Normalize180(c.AzimuthDeg - scanCenter))
+                        + Mathf.Abs(c.ElevationDeg - _modes.AntennaElevationDeg);
+            score += Mathf.Clamp(30f - ang, 0f, 30f) * 0.01f;
+
+            return score;
+        }
+
+        /// <summary>
+        /// Rate-limited push of best air threat onto vanilla targetList (WSO-like Apply lock).
+        /// </summary>
+        private void TryTwsAutoLock(float halfFov, float elevGate, float scanCenter)
+        {
+            if (!EngineRunning || _player == null)
+            {
+                return;
+            }
+
+            if (Time.unscaledTime < _nextTwsAutoLock)
+            {
+                return;
+            }
+
+            RadarContact? best = null;
+            float bestScore = float.NegativeInfinity;
+            for (int i = 0; i < _contacts.Count; i++)
+            {
+                RadarContact c = _contacts[i];
+                if (c.Kind != ContactKind.Air && c.Kind != ContactKind.Missile)
+                {
+                    continue;
+                }
+
+                if (IsOwnshipOrCrewContact(c) || c.Raw == null)
+                {
+                    continue;
+                }
+
+                if (c.Iff == IffRelation.Friend)
+                {
+                    continue;
+                }
+
+                // Must be in cone/range for auto-acquire (locked/RWR can already be held elsewhere).
+                float azAbs = Mathf.Abs(Normalize180(c.AzimuthDeg - scanCenter));
+                float elOff = Mathf.Abs(c.ElevationDeg - _modes.AntennaElevationDeg);
+                bool inGate = azAbs <= halfFov + 1f && elOff <= elevGate + 1f && c.InCone;
+                if (!inGate)
+                {
+                    continue;
+                }
+
+                float s = ScoreTwsAirThreat(c);
+                if (s > bestScore)
+                {
+                    bestScore = s;
+                    best = c;
+                }
+            }
+
+            if (best?.Raw == null || bestScore <= 0f || float.IsNegativeInfinity(bestScore))
+            {
+                return;
+            }
+
+            object? current = null;
+            try
+            {
+                WeaponReflect.TryGetPrimaryTargetUnit(_player, out current);
+            }
+            catch
+            {
+                current = null;
+            }
+
+            if (current is UnityEngine.Object cuo && cuo == null)
+            {
+                current = null;
+            }
+
+            int curId = current != null ? GameReflect.IdOf(current) : 0;
+            if (curId != 0 && curId == best.Id)
+            {
+                _modes.AcmCandidateId = best.Id;
+                return; // already locked on best
+            }
+
+            // Hysteresis: retarget only if clearly better than current (or current lost).
+            if (current != null && curId != 0)
+            {
+                RadarContact? curContact = FindById(curId);
+                float curScore = curContact != null ? ScoreTwsAirThreat(curContact) : 0f;
+                if (curScore > 0f && bestScore < curScore * 1.2f)
+                {
+                    _modes.AcmCandidateId = curId;
+                    return;
+                }
+            }
+
+            if (WeaponReflect.ApplyPrimaryLock(_player, best.Raw))
+            {
+                _nextTwsAutoLock = Time.unscaledTime + 0.35f; // ~0.25–0.5s retarget rate-limit
+                _modes.AcmCandidateId = best.Id;
+                Log.Info("TWS auto-lock → " + (best.Label ?? "?") + " id=" + best.Id
+                         + " score=" + bestScore.ToString("0.00"));
+            }
+            else
+            {
+                // Soft-fail: back off briefly so we do not spam reflection.
+                _nextTwsAutoLock = Time.unscaledTime + 0.5f;
             }
         }
 

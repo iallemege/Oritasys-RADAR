@@ -11,11 +11,17 @@ Independent PPI radar overlay inspired by PanzerWar-DE FlightRadar (RDR) *modes 
 | GUID | `com.iallemmege.RDA` |
 | Assembly | `RDA.dll` (kept for BepInEx install compatibility) |
 | Plugin DisplayName | **Oritasy's RADAR** |
-| Version | **0.0.5T** (`DisplayVersion`; BepInEx SemVer: `0.0.5`) |
+| Version | **0.0.6T** (`DisplayVersion`; BepInEx SemVer: `0.0.6`) |
 
 Standalone plugin with no external Oritasy runtime dependency. Soft-loads optional `OritasyFonts` for branding (`Oritasy™` footer only).
 
 Vanilla TacScreen can be suppressed for the **local player** via `DisableVanillaRadar` (default **off** for BIA coexistence). RDA draws its own IMGUI window titled **Oritasy's RADAR**. **Requires BIA Runtime** (`bia.runtime`) as a hard BepInEx prerequisite.
+
+## Features (v0.0.6T)
+
+- **Datalink continuous**: persistent `_datalinkHeld` cache — refresh only on throttled ingest; every frame merges held DL after Clear+own-radar (no flash at `DatalinkRefreshHz`); light position lerp; locked/RWR DL never dropped mid-hold
+- **TWS real auto-lock (对空)**: `Radar.TwsAutoLock` (default **true**) scores nearest + highest-threat air (foe/unknown, cone/range) and pushes vanilla `WeaponManager.targetList` / `AddTargetList` (WSO-style); rate-limit ~0.35s; `SyncVanillaTargetLock` still drives LK/TRK
+- **`/` settings menu**: Oritasy-style IMGUI (dark bezel `#020B10`, double border, accent bar) — Window X/Y + Opacity (`Display.WindowOpacity` 0.2–1.0); Reset Pos; persists to BepInEx cfg; opens anytime `/` pressed
 
 ## Features (v0.0.5T)
 
@@ -190,7 +196,7 @@ Known BIA modules (informational): BIAAirframe, BIARadar, BIAMfd, BIADrakenRound
    - Default `Display.HudGateMode` = **AircraftPresent** (MFD should appear when boarded).
    - If MFD still missing: set `Display.ForceShowHud = true` (emergency) and check LogOutput for `HUD diag:` / `OnGUI failed:` lines.
 
-**Versioning note:** BepInEx requires the plugin version in `[BepInPlugin]` to be numeric SemVer, so it uses `0.0.5`. The branded/user-facing version is `DisplayVersion = 0.0.5T`. Never use letter-only versions in `BepInPlugin`.
+**Versioning note:** BepInEx requires the plugin version in `[BepInPlugin]` to be numeric SemVer, so it uses `0.0.6`. The branded/user-facing version is `DisplayVersion = 0.0.6T`. Never use letter-only versions in `BepInPlugin`. Press **`/`** for the settings menu (position + opacity).
 
 ## Controls
 
@@ -203,7 +209,7 @@ Known BIA modules (informational): BIAAirframe, BIARadar, BIAMfd, BIADrakenRound
 | **N** | Heading-up / north-up |
 | **[** / **]** | Range down / up |
 | **;** / **'** | Slew scan center left / right |
-| **/** | Reset scan center |
+| **/** | Open / close settings (window position + opacity) |
 | **1** | STBY |
 | **2** | SRC/RWS |
 | **3** | TWS |
