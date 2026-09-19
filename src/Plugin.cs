@@ -1,3 +1,4 @@
+using System.Collections;
 using BepInEx;
 using HarmonyLib;
 using UnityEngine;
@@ -5,11 +6,13 @@ using UnityEngine;
 namespace RDA
 {
     [BepInPlugin(Guid, DisplayName, Version)]
+    [BepInDependency("com.iallemmege.oritasy", BepInDependency.DependencyFlags.SoftDependency)]
+    [BepInDependency("com.iallemmege.oritasyhud", BepInDependency.DependencyFlags.SoftDependency)]
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "com.iallemmege.RDA";
         public const string DisplayName = "Oritasy's RADAR";
-        public const string Version = "0.0.2T";
+        public const string Version = "0.0.3T";
 
         /// <summary>Full expansion for README / log only — never shown on the GUI chrome.</summary>
         public const string FullExpansion = "Realtime Aerial Detection And Ranging (R.A.D.A.R.)";
@@ -22,7 +25,10 @@ namespace RDA
         private ModeState? _modes;
         private RwrPanel? _rwr;
         private float _nextWindowPersist;
+        private float _nextHudDiag;
         private bool _stylesApplied;
+        private bool _loggedOnGuiError;
+        private bool _harmonyStarted;
 
         private void Awake()
         {
@@ -45,10 +51,40 @@ namespace RDA
             _contacts = new ContactProvider(_modes, _rwr);
             _gui = new RadarGui(_modes, _contacts, _rwr);
 
-            _harmony = new Harmony(Guid + ".harmony");
-            HarmonyHooks.Apply(_harmony, _rwr, _contacts, _modes);
+            // Heavy Harmony deferred to Start (one/two frames) so Oritasy / OritasyHud finish Awake first.
+            // Visibility fixes (GUI.depth / HudGateMode) are the primary compat path — do not disable OritasyHud.
 
-            Log.Info($"{DisplayName} {Version} — {FullExpansion}. Toggle {RDA.Config.ToggleHotkey.Value}. Independent standalone plugin.");
+            Log.Info($"{DisplayName} {Version} — {FullExpansion}. Toggle {RDA.Config.ToggleHotkey.Value}. HudGateMode={RDA.Config.HudGateMode.Value} ForceShowHud={RDA.Config.ForceShowHud.Value}. Soft-deps: oritasy / oritasyhud. Independent standalone plugin.");
+        }
+
+        private void Start()
+        {
+            if (!_harmonyStarted)
+            {
+                StartCoroutine(DeferredHarmonyApply());
+            }
+        }
+
+        private IEnumerator DeferredHarmonyApply()
+        {
+            // Let peer plugins (Oritasy / OritasyHud) finish their Awake/Start before we patch.
+            yield return null;
+            yield return null;
+            if (_harmonyStarted || _rwr == null || _contacts == null || _modes == null)
+            {
+                yield break;
+            }
+
+            _harmonyStarted = true;
+            try
+            {
+                _harmony = new Harmony(Guid + ".harmony");
+                HarmonyHooks.Apply(_harmony, _rwr, _contacts, _modes);
+            }
+            catch (System.Exception ex)
+            {
+                Log.Warn("Deferred Harmony apply failed softly: " + ex.Message);
+            }
         }
 
         private void Update()
@@ -146,11 +182,41 @@ namespace RDA
                 _rwr.OwnshipHeadingDeg = _contacts.OwnshipHeadingDeg;
                 _rwr.PlayerAircraft = _contacts.Player;
                 _rwr.Tick(Time.unscaledDeltaTime);
+
+                if (Time.unscaledTime >= _nextHudDiag)
+                {
+                    _nextHudDiag = Time.unscaledTime + 5f;
+                    LogHudDiagnostics();
+                }
             }
             catch (System.Exception ex)
             {
                 Log.Debug("Update failed softly: " + ex.Message);
             }
+        }
+
+        private void LogHudDiagnostics()
+        {
+            if (_contacts == null)
+            {
+                return;
+            }
+
+            Rect wr = _gui != null ? _gui.WindowRect : default;
+            string ejected = _contacts.LastHasEjected.HasValue
+                ? (_contacts.LastHasEjected.Value ? "true" : "false")
+                : "n/a";
+            Log.Info(
+                "HUD diag: ShowWindow=" + RDA.Config.ShowWindow.Value
+                + " InMission=" + _contacts.InMission
+                + " InAircraft=" + _contacts.InAircraft
+                + " playerResolved=" + (_contacts.Player != null)
+                + " HasEjected=" + ejected
+                + " HudGateMode=" + RDA.Config.HudGateMode.Value
+                + " ForceShowHud=" + RDA.Config.ForceShowHud.Value
+                + " ShouldDrawHud=" + _contacts.ShouldDrawHud
+                + " window=(" + wr.x.ToString("F0") + "," + wr.y.ToString("F0")
+                + "," + wr.width.ToString("F0") + "x" + wr.height.ToString("F0") + ")");
         }
 
         private static void HandleDigitKeys(ModeState modes)
@@ -206,18 +272,21 @@ namespace RDA
 
         private void OnGUI()
         {
+            int previousDepth = GUI.depth;
             try
             {
+                // Draw on top of other IMGUI mods (e.g. OritasyHud). Lower depth = later = on top.
+                GUI.depth = -1000;
+
                 if (!_stylesApplied)
                 {
                     OritasyUi.ApplyToStyles();
                     _stylesApplied = true;
                 }
 
-                // Hotkey may still flip ShowWindow, but draw only while seated in aircraft
-                // (hide on eject / destroyed / menu; show again on board). Never force ShowWindow false.
-                bool drawHud = _contacts != null && _contacts.ShouldDrawHud;
-                if (drawHud && _gui != null && RDA.Config.ShowWindow.Value)
+                bool show = RDA.Config.ShowWindow.Value;
+                bool drawHud = show && _contacts != null && _contacts.ShouldDrawHud;
+                if (drawHud && _gui != null)
                 {
                     _gui.Draw();
                     if (Time.unscaledTime >= _nextWindowPersist)
@@ -240,7 +309,19 @@ namespace RDA
             }
             catch (System.Exception ex)
             {
-                Log.Debug("OnGUI failed softly: " + ex.Message);
+                if (!_loggedOnGuiError)
+                {
+                    _loggedOnGuiError = true;
+                    Log.Warn("OnGUI failed: " + ex);
+                }
+                else
+                {
+                    Log.Debug("OnGUI failed softly: " + ex.Message);
+                }
+            }
+            finally
+            {
+                GUI.depth = previousDepth;
             }
         }
 

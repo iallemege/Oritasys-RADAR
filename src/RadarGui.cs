@@ -34,10 +34,34 @@ namespace RDA
             _window = new Rect(Config.WindowX.Value, Config.WindowY.Value, Config.WindowWidth.Value, Config.WindowHeight.Value);
         }
 
+        internal Rect WindowRect => _window;
+
         internal void Draw()
         {
+            EnsureWindowOnScreen();
             // Empty title — fully custom chrome inside.
             _window = GUI.Window(WindowId, _window, DrawContents, GUIContent.none, ScopeDraw.WindowStyle);
+        }
+
+        /// <summary>Reset window if NaN or completely off Screen.width/height.</summary>
+        internal void EnsureWindowOnScreen()
+        {
+            float sw = Screen.width;
+            float sh = Screen.height;
+            float cfgW = Mathf.Clamp(Config.WindowWidth.Value, 200f, 2000f);
+            float cfgH = Mathf.Clamp(Config.WindowHeight.Value, 160f, 1600f);
+            bool nan = float.IsNaN(_window.x) || float.IsNaN(_window.y)
+                || float.IsNaN(_window.width) || float.IsNaN(_window.height)
+                || float.IsInfinity(_window.x) || float.IsInfinity(_window.y);
+            bool tiny = _window.width < 50f || _window.height < 50f;
+            // Completely off-screen (no overlap with visible area).
+            bool off = _window.xMax < 0f || _window.yMax < 0f
+                || _window.x >= sw || _window.y >= sh;
+            if (nan || tiny || off)
+            {
+                _window = new Rect(40f, 40f, cfgW, cfgH);
+                Log.Info("MFD window reset to safe default (40,40) — was off-screen/NaN/tiny.");
+            }
         }
 
         internal void PersistWindow()

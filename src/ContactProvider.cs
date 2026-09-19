@@ -65,6 +65,7 @@ namespace RDA
         private object? _lastBoardedAircraft;
         private bool? _lastSeatGate;
         private string _lastSeatReason = "";
+        private bool? _lastHasEjected;
 
         /// <summary>Cached raw unit for world TRK label between contact ticks.</summary>
         internal object? LockedUnitRaw { get; private set; }
@@ -95,8 +96,28 @@ namespace RDA
         /// <summary>True when local player is seated in a flyable aircraft (not eject/dead/spectate).</summary>
         internal bool InAircraft { get; private set; }
 
-        /// <summary>MFD / gun funnel / world TRK / RWR draw gate.</summary>
-        internal bool ShouldDrawHud => InMission && InAircraft;
+        /// <summary>Last HasEjected probe (null = unknown / no aircraft). For diagnostics.</summary>
+        internal bool? LastHasEjected => _lastHasEjected;
+
+        /// <summary>MFD / gun funnel / world TRK / RWR draw gate (respects Display.HudGateMode / ForceShowHud).</summary>
+        internal bool ShouldDrawHud
+        {
+            get
+            {
+                if (Config.ForceShowHud.Value || Config.IsAlwaysWhenToggledGate())
+                {
+                    return true;
+                }
+
+                if (Config.IsAircraftPresentGate())
+                {
+                    // Aircraft resolved + mission tick running; hide only via ejected/destroyed leave path.
+                    return InMission;
+                }
+
+                return InMission && InAircraft;
+            }
+        }
 
         /// <summary>True when engines appear running. Unknown reflection → true (fail-soft).</summary>
         internal bool EngineRunning { get; private set; } = true;
@@ -152,16 +173,16 @@ namespace RDA
                 return;
             }
 
-            // Seat gate: local aircraft + !HasEjected (Nuclear Option). Soft reflection.
-            bool seated = EvaluateInAircraft(out string seatReason);
-            if (_lastSeatGate != seated || _lastSeatReason != seatReason)
+            // HUD / mission gate — mode-dependent (compat with Oritasy soft seat probes).
+            bool allowMission = EvaluateMissionGate(out string seatReason);
+            if (_lastSeatGate != allowMission || _lastSeatReason != seatReason)
             {
-                Log.Info("Seat gate → " + (seated ? "SHOW" : "HIDE") + " (" + seatReason + ")");
-                _lastSeatGate = seated;
+                Log.Info("HUD gate [" + Config.HudGateMode.Value + "] → " + (allowMission ? "SHOW" : "HIDE") + " (" + seatReason + ")");
+                _lastSeatGate = allowMission;
                 _lastSeatReason = seatReason;
             }
 
-            if (!seated)
+            if (!allowMission)
             {
                 HandleLeftAircraft(seatReason);
                 return;
@@ -479,6 +500,60 @@ namespace RDA
             _modes.ActiveProfile = _activeProfile;
         }
 
+        /// <summary>
+        /// Decide whether mission/radar tick should run and (for Seated/AircraftPresent) draw.
+        /// AircraftPresent: local aircraft resolves + hide only if HasEjected==true or destroyed.
+        /// AlwaysWhenToggled / ForceShowHud: still run mission when aircraft is present the same way.
+        /// Seated: full HasEjected + soft seated probe (legacy).
+        /// </summary>
+        private bool EvaluateMissionGate(out string reason)
+        {
+            _lastHasEjected = null;
+            if (_player == null)
+            {
+                reason = "menu / no aircraft";
+                return false;
+            }
+
+            try
+            {
+                if (_player is UnityEngine.Object uo && uo == null)
+                {
+                    reason = "aircraft destroyed";
+                    return false;
+                }
+            }
+            catch
+            {
+                reason = "aircraft destroyed";
+                return false;
+            }
+
+            bool? ejected = GameReflect.TryHasEjected(_player);
+            _lastHasEjected = ejected;
+
+            if (Config.IsSeatedGate())
+            {
+                return EvaluateInAircraft(out reason);
+            }
+
+            // AircraftPresent (default) and AlwaysWhenToggled mission path: hide only on eject/destroy.
+            if (ejected == true)
+            {
+                reason = "HasEjected";
+                return false;
+            }
+
+            if (GameReflect.TryIsUnitDestroyedOrDead(_player) == true)
+            {
+                reason = "destroyed / dead";
+                return false;
+            }
+
+            reason = ejected == false ? "aircraft present (!HasEjected)" : "aircraft present (live)";
+            return true;
+        }
+
         private bool EvaluateInAircraft(out string reason)
         {
             if (_player == null)
@@ -556,6 +631,7 @@ namespace RDA
 
             _wasInAircraft = false;
             _lastBoardedAircraft = null;
+            _lastHasEjected = null;
             ClearOwnshipProfileCache();
             // Keep _lastSeatGate so flip log still fires on re-board; do not touch ShowWindow.
             PublishSnapshot();

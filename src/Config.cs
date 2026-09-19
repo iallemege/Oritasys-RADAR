@@ -20,6 +20,8 @@ namespace RDA
         internal static ConfigEntry<KeyboardShortcut> CycleWaveformHotkey = null!;
         internal static ConfigEntry<KeyboardShortcut> CycleAcmDesignateHotkey = null!;
         internal static ConfigEntry<bool> ShowWindow = null!;
+        internal static ConfigEntry<string> HudGateMode = null!;
+        internal static ConfigEntry<bool> ForceShowHud = null!;
         internal static ConfigEntry<bool> NorthUp = null!;
         internal static ConfigEntry<bool> ShowRwr = null!;
         internal static ConfigEntry<bool> ShowGunFunnel = null!;
@@ -104,6 +106,12 @@ namespace RDA
             CycleAcmDesignateHotkey = file.Bind("Hotkeys", "CycleAcmDesignate", new KeyboardShortcut(KeyCode.R), "R: cycle vanilla WeaponManager.targetList (primary=[0]) so missiles guide; ACM may AddTargetList designate when list empty. Syncs LK/TRK.");
 
             ShowWindow = file.Bind("Display", "ShowWindow", true, "Start with the overlay visible.");
+            HudGateMode = file.Bind("Display", "HudGateMode", "AircraftPresent",
+                new ConfigDescription(
+                    "When to draw the MFD: Seated (full HasEjected/seat gate) | AircraftPresent (show when local aircraft resolves; hide only if HasEjected==true or destroyed) | AlwaysWhenToggled (draw whenever ShowWindow — hangar/menu debug / Oritasy conflict bypass).",
+                    new AcceptableValueList<string>("Seated", "AircraftPresent", "AlwaysWhenToggled")));
+            ForceShowHud = file.Bind("Display", "ForceShowHud", false,
+                "Emergency bypass: when true, draw whenever ShowWindow (ignore seat/aircraft gate). Use to verify OritasyHud is not covering RDA.");
             NorthUp = file.Bind("Display", "NorthUp", false, "If false, the PPI is heading-up.");
             ShowRwr = file.Bind("Display", "ShowRwr", true, "Draw the RWR panel beside the PPI.");
             ShowGunFunnel = file.Bind("Display", "ShowGunFunnel", true, "Draw Su-27-style LCOS gun funnel (tapering diamonds/chevrons + gravity drop) when gun + solution exists.");
@@ -194,6 +202,26 @@ namespace RDA
 
             VerboseLogging = file.Bind("Debug", "VerboseLogging", false, "Log discovered game members and reflection probes.");
             FallbackSceneScan = file.Bind("Debug", "FallbackSceneScan", true, "If private radar track lists are empty, geometrically scan nearby Units inside the cone. Display-only.");
+        }
+
+        internal static bool IsForceOrAlwaysGate()
+        {
+            return ForceShowHud.Value || IsAlwaysWhenToggledGate();
+        }
+
+        internal static bool IsAlwaysWhenToggledGate()
+        {
+            return string.Equals(HudGateMode.Value, "AlwaysWhenToggled", System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static bool IsAircraftPresentGate()
+        {
+            return string.Equals(HudGateMode.Value, "AircraftPresent", System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static bool IsSeatedGate()
+        {
+            return !IsAircraftPresentGate() && !IsAlwaysWhenToggledGate();
         }
 
         internal static Color ParseHex(string? hex, Color fallback)
