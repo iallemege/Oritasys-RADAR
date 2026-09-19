@@ -1,20 +1,23 @@
 using System.Collections;
 using BepInEx;
+using BepInEx.Bootstrap;
 using HarmonyLib;
 using UnityEngine;
 
 namespace RDA
 {
     [BepInPlugin(Guid, DisplayName, Version)]
+    [BepInDependency("bia.runtime")]
     [BepInDependency("com.iallemmege.oritasy", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("com.iallemmege.oritasyhud", BepInDependency.DependencyFlags.SoftDependency)]
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "com.iallemmege.RDA";
         public const string DisplayName = "Oritasy's RADAR";
+        public const string BiaRuntimeGuid = "bia.runtime";
         // BepInEx parses this value as SemVer; keep the brand suffix in DisplayVersion.
-        public const string Version = "0.0.4";
-        public const string DisplayVersion = "0.0.4T";
+        public const string Version = "0.0.5";
+        public const string DisplayVersion = "0.0.5T";
 
         /// <summary>Full expansion for README / log only — never shown on the GUI chrome.</summary>
         public const string FullExpansion = "Realtime Aerial Detection And Ranging (R.A.D.A.R.)";
@@ -56,7 +59,53 @@ namespace RDA
             // Heavy Harmony deferred to Start (one/two frames) so Oritasy / OritasyHud finish Awake first.
             // Visibility fixes (GUI.depth / HudGateMode) are the primary compat path — do not disable OritasyHud.
 
-            Log.Info($"{DisplayName} {DisplayVersion} — {FullExpansion}. Toggle {RDA.Config.ToggleHotkey.Value}. HudGateMode={RDA.Config.HudGateMode.Value} ForceShowHud={RDA.Config.ForceShowHud.Value}. Soft-deps: oritasy / oritasyhud. Independent standalone plugin.");
+            bool biaPresent = IsBiaRuntimeLoaded();
+            if (!biaPresent)
+            {
+                // Hard BepInDependency normally prevents load; soft message if somehow running without.
+                Log.Warn($"{DisplayName} {DisplayVersion}: BIA Runtime ({BiaRuntimeGuid}) is required but was not found in Chainloader.PluginInfos. Install BIA.Runtime_*.dll into BepInEx/plugins.");
+            }
+            else
+            {
+                Log.Info($"{DisplayName} {DisplayVersion}: BIA Runtime present — coexistence OK (BIARadar / BIAMfd + RDA). Toggle overlay with {RDA.Config.ToggleHotkey.Value}. DisableVanillaRadar default=false so shared tracks are not starved.");
+            }
+
+            Log.Info($"{DisplayName} {DisplayVersion} — {FullExpansion}. BIA required (hard dep {BiaRuntimeGuid}). Toggle {RDA.Config.ToggleHotkey.Value}. HudGateMode={RDA.Config.HudGateMode.Value} ForceShowHud={RDA.Config.ForceShowHud.Value} GuiDepth={RDA.Config.GuiDepth.Value} DisableVanillaRadar={RDA.Config.DisableVanillaRadar.Value}. Soft-deps: oritasy / oritasyhud.");
+        }
+
+        /// <summary>True when Chainloader reports bia.runtime (or assembly name fallback).</summary>
+        internal static bool IsBiaRuntimeLoaded()
+        {
+            try
+            {
+                if (Chainloader.PluginInfos != null && Chainloader.PluginInfos.ContainsKey(BiaRuntimeGuid))
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // fail soft
+            }
+
+            try
+            {
+                foreach (System.Reflection.Assembly asm in System.AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    string name = asm.GetName().Name ?? string.Empty;
+                    if (name.IndexOf("BIA.Runtime", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("BIARuntime", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+                // fail soft
+            }
+
+            return false;
         }
 
         private void Start()
@@ -277,8 +326,9 @@ namespace RDA
             int previousDepth = GUI.depth;
             try
             {
-                // Draw on top of other IMGUI mods (e.g. OritasyHud). Lower depth = later = on top.
-                GUI.depth = -1000;
+                // Draw on top of other IMGUI mods (e.g. OritasyHud / BIAMfd). Lower depth = later = on top.
+                // Configurable; default -1000 may cover BIAMfd / YukikazeHud — lower magnitude if needed.
+                GUI.depth = RDA.Config.GuiDepth.Value;
 
                 if (!_stylesApplied)
                 {

@@ -47,6 +47,8 @@ namespace RDA
         private static readonly Dictionary<string, MemberHandle?> MemberCache =
             new Dictionary<string, MemberHandle?>(256);
 
+        private static bool _loggedBiaAssembly;
+
         internal static Assembly? GameAssembly { get; private set; }
         internal static Type? Aircraft { get; private set; }
         internal static Type? Unit { get; private set; }
@@ -104,6 +106,7 @@ namespace RDA
                     " CombatHUD=" + Name(CombatHud) +
                     " SceneSingleton=" + Name(SceneSingleton) +
                     " GameManager=" + Name(GameManager));
+                LogBiaAssemblyOnce();
             }
             catch (Exception ex)
             {
@@ -1551,6 +1554,33 @@ namespace RDA
             }
 
             return null;
+        }
+
+
+        private static void LogBiaAssemblyOnce()
+        {
+            if (_loggedBiaAssembly)
+            {
+                return;
+            }
+
+            _loggedBiaAssembly = true;
+            try
+            {
+                foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    string name = assembly.GetName().Name ?? string.Empty;
+                    if (name.IndexOf("BIA", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        Log.Info("BIA assembly present: " + name + " — soft reflection on Aircraft/Radar remains fail-soft (BIA airframes likely extend vanilla Aircraft).");
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Debug("BIA assembly probe soft-fail: " + ex.Message);
+            }
         }
 
         private static bool IsGameAssembly(Assembly assembly)

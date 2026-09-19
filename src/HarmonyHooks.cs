@@ -150,7 +150,7 @@ namespace RDA
 
         private static void PatchVanillaSkipPrefix(Harmony harmony, Type? type, params string[] methodNames)
         {
-            if (type == null)
+            if (type == null || IsBiaType(type))
             {
                 return;
             }
@@ -285,6 +285,12 @@ namespace RDA
             if (type == null)
             {
                 Log.Debug("Skip patch; type not found for " + string.Join("/", methodNames));
+                return;
+            }
+
+            if (IsBiaType(type))
+            {
+                Log.Info("Skip Harmony patch on BIA type " + type.FullName + " (RDA only patches vanilla NuclearOption types).");
                 return;
             }
 
@@ -437,12 +443,39 @@ namespace RDA
             }
         }
 
+        /// <summary>Never Harmony-patch BIA plugin types (BIARadar, BIAMfd, etc.).</summary>
+        private static bool IsBiaType(Type? type)
+        {
+            if (type == null)
+            {
+                return false;
+            }
+
+            string name = type.Name ?? string.Empty;
+            string full = type.FullName ?? string.Empty;
+            string asm = type.Assembly?.GetName().Name ?? string.Empty;
+            if (name.StartsWith("BIA", StringComparison.OrdinalIgnoreCase) ||
+                full.IndexOf(".BIA", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                asm.IndexOf("BIA", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            return false;
+        }
+
         private static void TryPatchSeekerSlowChecks(
             Harmony harmony, Type? seekerType, HarmonyMethod prefix, string label)
         {
             if (seekerType == null)
             {
                 Log.Debug("Missile relock: " + label + " type not found (fail soft)");
+                return;
+            }
+
+            if (IsBiaType(seekerType))
+            {
+                Log.Debug("Missile relock: skip BIA type " + seekerType.FullName);
                 return;
             }
 

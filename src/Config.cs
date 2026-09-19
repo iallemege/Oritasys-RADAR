@@ -22,6 +22,7 @@ namespace RDA
         internal static ConfigEntry<bool> ShowWindow = null!;
         internal static ConfigEntry<string> HudGateMode = null!;
         internal static ConfigEntry<bool> ForceShowHud = null!;
+        internal static ConfigEntry<int> GuiDepth = null!;
         internal static ConfigEntry<bool> NorthUp = null!;
         internal static ConfigEntry<bool> ShowRwr = null!;
         internal static ConfigEntry<bool> ShowGunFunnel = null!;
@@ -112,6 +113,10 @@ namespace RDA
                     new AcceptableValueList<string>("Seated", "AircraftPresent", "AlwaysWhenToggled")));
             ForceShowHud = file.Bind("Display", "ForceShowHud", false,
                 "Emergency bypass: when true, draw whenever ShowWindow (ignore seat/aircraft gate). Use to verify OritasyHud is not covering RDA.");
+            GuiDepth = file.Bind("Display", "GuiDepth", -1000,
+                new ConfigDescription(
+                    "IMGUI GUI.depth for RDA OnGUI (lower = drawn later / on top). Default -1000 draws above most IMGUI mods including BIAMfd / YukikazeHud; raise toward 0 if RDA covers BIA MFD.",
+                    new AcceptableValueRange<int>(-10000, 10000)));
             NorthUp = file.Bind("Display", "NorthUp", false, "If false, the PPI is heading-up.");
             ShowRwr = file.Bind("Display", "ShowRwr", true, "Draw the RWR panel beside the PPI.");
             ShowGunFunnel = file.Bind("Display", "ShowGunFunnel", true, "Draw Su-27-style LCOS gun funnel (tapering diamonds/chevrons + gravity drop) when gun + solution exists.");
@@ -141,7 +146,7 @@ namespace RDA
             ElevAuto = file.Bind("Radar", "ElevAuto", true, "Slave antenna elevation toward locked target (or 0 in ACM search).");
             ScanSlewStepDeg = file.Bind("Radar", "ScanSlewStepDeg", 5f, new ConfigDescription("Manual scan-center slew step (degrees).", new AcceptableValueRange<float>(1f, 30f)));
             ContactUpdateHz = file.Bind("Radar", "ContactUpdateHz", 15f, new ConfigDescription("Throttle for ContactProvider heavy work (Hz). GUI draws from cached snapshot.", new AcceptableValueRange<float>(5f, 60f)));
-            DisableVanillaRadar = file.Bind("Radar", "DisableVanillaRadar", true, "When true, Harmony Prefix skips TacScreen.ScanRadar / Radar.TargetSearch for the local player aircraft only (AI unaffected). Fail-soft.");
+            DisableVanillaRadar = file.Bind("Radar", "DisableVanillaRadar", false, "When true, Harmony Prefix skips TacScreen.ScanRadar / Radar.TargetSearch for the local player aircraft only (AI unaffected). Default false for BIA coexistence (BIARadar / shared tracks). User may enable. Fail-soft.");
             UseCapacityFallback = file.Bind("Radar", "UseCapacityFallback", true,
                 "When no builtin/override profile matches, derive envelope from PowerSupply.maxCharge / maxPower.");
             PreferNativeRadarStats = file.Bind("Radar", "PreferNativeRadarStats", true,

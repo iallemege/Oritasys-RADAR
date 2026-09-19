@@ -1,0 +1,23 @@
+Oritasy's RADAR 0.0.5T
+
+Install:
+1. Install BepInEx 5 x64 (Mono) in the Nuclear Option game directory.
+2. REQUIRED: install BIA Runtime (BIA.Runtime_*.dll, GUID bia.runtime / DisplayName "BIA Runtime")
+   into Nuclear Option/BepInEx/plugins/. RDA has a hard BepInDependency on bia.runtime —
+   Chainloader will not load RDA without it and will load RDA after BIA automatically.
+3. Copy RDA.dll into Nuclear Option/BepInEx/plugins/.
+4. Launch the game; BepInEx will load the plugin.
+
+Plugin DisplayName: Oritasy's RADAR
+BepInPlugin version (numeric SemVer): 0.0.5
+DisplayVersion: 0.0.5T
+
+Notes (0.0.5T — BIA compatibility):
+- Hard prerequisite: bia.runtime (BIA.Runtime in plugins). Soft deps: com.iallemmege.oritasy / com.iallemmege.oritasyhud.
+- DisableVanillaRadar default=false so BIARadar / shared tracks are not starved (enable in cfg if desired).
+- Display.GuiDepth default=-1000 (IMGUI on top; may cover BIAMfd / YukikazeHud — raise toward 0 if needed).
+- Harmony patches only vanilla NuclearOption types — never BIA* types.
+- Toggle overlay with F6. BIARadar/BIAMfd + RDA coexistence is OK.
+- BepInEx requires numeric SemVer in [BepInPlugin], so runtime version is 0.0.5; 0.0.5T is branded DisplayVersion.
+- Default Display.HudGateMode=AircraftPresent; ForceShowHud=true is emergency bypass.
+- Ensure Oritasy plugin files end with .dll (not .dl) if used. OritasyFonts/ optional.

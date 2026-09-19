@@ -11,11 +11,20 @@ Independent PPI radar overlay inspired by PanzerWar-DE FlightRadar (RDR) *modes 
 | GUID | `com.iallemmege.RDA` |
 | Assembly | `RDA.dll` (kept for BepInEx install compatibility) |
 | Plugin DisplayName | **Oritasy's RADAR** |
-| Version | **0.0.4T** (`DisplayVersion`; BepInEx SemVer: `0.0.4`) |
+| Version | **0.0.5T** (`DisplayVersion`; BepInEx SemVer: `0.0.5`) |
 
 Standalone plugin with no external Oritasy runtime dependency. Soft-loads optional `OritasyFonts` for branding (`Oritasy™` footer only).
 
-Vanilla TacScreen can be suppressed for the **local player** via `DisableVanillaRadar` (default on). RDA draws its own IMGUI window titled **Oritasy's RADAR**.
+Vanilla TacScreen can be suppressed for the **local player** via `DisableVanillaRadar` (default **off** for BIA coexistence). RDA draws its own IMGUI window titled **Oritasy's RADAR**. **Requires BIA Runtime** (`bia.runtime`) as a hard BepInEx prerequisite.
+
+## Features (v0.0.5T)
+
+- **Hard prerequisite**: `[BepInDependency("bia.runtime")]` — Chainloader requires **BIA Runtime** and loads RDA after it
+- **BIA coexistence**: `DisableVanillaRadar` default **false** so BIARadar / shared vanilla tracks are not starved; user may still enable
+- **IMGUI layering**: `Display.GuiDepth` (default **-1000**) — may draw over BIAMfd / YukikazeHud; raise toward 0 if needed
+- Soft reflection on Aircraft/Radar remains fail-soft (BIA airframes likely extend vanilla); logs once if a BIA assembly is present
+- Harmony patches **only** vanilla NuclearOption types — never `BIA*` types
+- Soft deps on `com.iallemmege.oritasy` / `com.iallemmege.oritasyhud` unchanged
 
 ## Features (v0.0.4T)
 
@@ -145,23 +154,43 @@ Vanilla TacScreen can be suppressed for the **local player** via `DisableVanilla
 - Terrain scan readout: ground range along antenna boresight (Physics raycast when available, else flat-earth). Soft-fail if no Physics
 - Antenna elevation tape with auto-slave (±60°) toward locked target (or 0° in ACM search)
 - RWR panel fed from `TacScreen.OnRadarWarning` / `RadarWarning` (and similar) via Harmony postfixes
-- **`DisableVanillaRadar`** (default **true**): Harmony Prefix on `TacScreen.ScanRadar` / `Radar.TargetSearch` skips vanilla scan for the **local player aircraft only** (AI unaffected). Fail-soft
+- **`DisableVanillaRadar`** (was default true in v0.5; **v0.0.5T+ default false** for BIA): Harmony Prefix on `TacScreen.ScanRadar` / `Radar.TargetSearch` skips vanilla scan for the **local player aircraft only** (AI unaffected). Fail-soft
 - **Per-aircraft radar profiles**: builtin envelopes for known Nuclear Option airframes; unknown/mod aircraft derive from `PowerSupply.maxCharge` / `maxPower`, optionally blended with native `Radar.radarCone` + `RadarParameters.maxRange` (Hybrid)
 - Optional override file `BepInEx/config/OritasyRadar.profiles.json` (soft-fail if missing)
 - Performance: ContactProvider + weapon solve throttled (~15 Hz); GUI/funnel draw from cached `HitSolution`; reflection FieldInfo cached; OnGUI styles applied once
 
+
+## BIA compatibility
+
+RDA **0.0.5T+** requires **BIA Runtime** (plugin GUID `bia.runtime`, DisplayName **BIA Runtime**, e.g. `BIA.Runtime_1.0.23.dll`).
+
+| Topic | Detail |
+| --- | --- |
+| Prerequisite | Hard `[BepInDependency("bia.runtime")]` — Chainloader refuses to load RDA without BIA and loads RDA **after** BIA |
+| Soft deps | Still soft on `com.iallemmege.oritasy` / `com.iallemmege.oritasyhud` |
+| SemVer | `Plugin.Version = "0.0.5"` (numeric only for BepInEx); UI/branding uses `DisplayVersion = "0.0.5T"` |
+| `DisableVanillaRadar` | Default **false** so Prefix-skip on `TacScreen.ScanRadar` / `Radar.TargetSearch` does **not** starve **BIARadar** or shared tracks on BIA airframes. Enable in cfg if you want vanilla local-player scan suppressed |
+| IMGUI / MFD | `GUI.depth` via `Display.GuiDepth` (default **-1000**) draws RDA above most IMGUI — including **BIAMfd** / **BIAYukikazeHud**. Raise toward `0` if RDA covers BIA MFD panels. Toggle RDA with **F6** |
+| Harmony | Patches only vanilla Nuclear Option types (`Aircraft`, `Radar`, `TacScreen`, `ARHSeeker`, …). **Never** patches `BIA*` types (BIARadar, BIAMfd, BIAAirframe, …) |
+| Reflection | Soft Aircraft/Radar reflection; BIA airframes typically extend vanilla `Aircraft` — fail-soft; one Info log when a BIA assembly is detected |
+| Install order | Automatic via BepInEx dependency graph — place both DLLs in `plugins/`; no manual load-order hack needed |
+| Coexistence | BIARadar / BIAMfd + RDA PPI overlay are both OK; use F6 to hide RDA when using BIA MFDs exclusively |
+
+Known BIA modules (informational): BIAAirframe, BIARadar, BIAMfd, BIADrakenRoundMfd, BIACoffinCanopy, BIAYukikazeHud.
+
 ## Install
 
 1. Install **BepInEx 5 x64** (Mono) into the Nuclear Option game folder.
-2. Build this project (or copy a Release `RDA.dll`).
-3. Place `RDA.dll` in `Nuclear Option/BepInEx/plugins/`.
-4. Optional: put `NotoSansSC-VF.ttf` (or any `.ttf`) in `BepInEx/plugins/OritasyFonts/` for CJK / branding font.
-5. If you also use **Oritasy** / **OritasyHud**: ensure those plugin files end with **`.dll`** (not `.dl`). BepInEx typically will not load a `.dl` file. RDA does **not** hard-require Oritasy assemblies — fonts from `OritasyFonts/` are optional soft-load only.
-6. Launch once. Config is written to `BepInEx/config/com.iallemmege.RDA.cfg`.
+2. Install **BIA Runtime** (`BIA.Runtime_*.dll`, GUID `bia.runtime`) into `BepInEx/plugins/` — **required** hard prerequisite. Chainloader will not load RDA without it (install order is automatic via dependency).
+3. Build this project (or copy a Release `RDA.dll`).
+4. Place `RDA.dll` in `Nuclear Option/BepInEx/plugins/`.
+5. Optional: put `NotoSansSC-VF.ttf` (or any `.ttf`) in `BepInEx/plugins/OritasyFonts/` for CJK / branding font.
+6. If you also use **Oritasy** / **OritasyHud**: ensure those plugin files end with **`.dll`** (not `.dl`). BepInEx typically will not load a `.dl` file. RDA does **not** hard-require Oritasy assemblies — fonts from `OritasyFonts/` are optional soft-load only.
+7. Launch once. Config is written to `BepInEx/config/com.iallemmege.RDA.cfg`.
    - Default `Display.HudGateMode` = **AircraftPresent** (MFD should appear when boarded).
    - If MFD still missing: set `Display.ForceShowHud = true` (emergency) and check LogOutput for `HUD diag:` / `OnGUI failed:` lines.
 
-**Versioning note:** BepInEx requires the plugin version in `[BepInPlugin]` to be numeric SemVer, so it uses `0.0.4`. The branded/user-facing version is `DisplayVersion = 0.0.4T`.
+**Versioning note:** BepInEx requires the plugin version in `[BepInPlugin]` to be numeric SemVer, so it uses `0.0.5`. The branded/user-facing version is `DisplayVersion = 0.0.5T`. Never use letter-only versions in `BepInPlugin`.
 
 ## Controls
 
@@ -236,7 +265,8 @@ Mode FOV / range / track caps **scale relative to the active aircraft profile** 
 | `ElevAuto` | true | Slave antenna elev |
 | `ScanSlewStepDeg` | 5 | Manual scan-center slew step |
 | `ContactUpdateHz` | 15 | ContactProvider throttle (GUI uses snapshot) |
-| `DisableVanillaRadar` | **true** | Skip vanilla ScanRadar/TargetSearch for local player only |
+| `DisableVanillaRadar` | **false** | Skip vanilla ScanRadar/TargetSearch for local player only (default off for BIA) |
+| `GuiDepth` | **-1000** | IMGUI depth (lower = on top; may cover BIAMfd) |
 | `UseCapacityFallback` | **true** | Derive profile from PowerSupply capacity when no builtin/override matches |
 | `PreferNativeRadarStats` | **true** | Blend capacity formula 50/50 with native radarCone/maxRange (Hybrid) |
 | `ShowWeaponEta` | **true** | Lock-strip weapon ETA / HIT|MARG|NO line |
