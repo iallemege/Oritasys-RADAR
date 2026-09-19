@@ -140,7 +140,7 @@ namespace RDA
             WindowWidth = file.Bind("Display", "WindowWidth", 680f, "Overlay window width (default raised in 1.0.3 for strip text; saved larger sizes kept).");
             WindowHeight = file.Bind("Display", "WindowHeight", 520f, "Overlay window height (default raised in 1.0.3 for taller data strip; saved larger sizes kept).");
             WindowOpacity = file.Bind("Display", "WindowOpacity", 0.92f,
-                new ConfigDescription("MFD window opacity / transparency (0.05 = nearly clear, 1.0 = opaque). Applied to panel fills.", new AcceptableValueRange<float>(0.05f, 1f)));
+                new ConfigDescription("Panel opacity / translucency (0.05 = see-through dark, 1.0 = opaque). GL panel fill only — glyphs stay full alpha.", new AcceptableValueRange<float>(0.05f, 1f)));
 
             AcmAltitudeBandM = file.Bind("Radar", "AcmAltitudeBandM", 1200f, new ConfigDescription("ACM A/G same-height gate (meters). Keep surface contacts near ground (alt ≤ band) or within ±band of ownship altitude. High air-altitude unknowns are dropped.", new AcceptableValueRange<float>(200f, 5000f)));
             AcmLockDwellSec = file.Bind("Radar", "AcmLockDwellSec", 0.2f, new ConfigDescription("Legacy alias; ACM is A/G designate (no air auto-lock). Prefer TwsLockDwellSec for air STT.", new AcceptableValueRange<float>(0.05f, 5f)));
@@ -151,7 +151,7 @@ namespace RDA
             StandbyRcsFactor = file.Bind("Radar", "StandbyRcsFactor", 0.8f, new ConfigDescription("Local-player RCS scale while radar is STBY (0.8 = −20%). AI unaffected.", new AcceptableValueRange<float>(0.1f, 1f)));
             AcmBreakSec = file.Bind("Radar", "AcmBreakSec", 0.8f, new ConfigDescription("Seconds out of gate before ACM A/G or TWS lock breaks.", new AcceptableValueRange<float>(0.1f, 5f)));
             ElevStepDeg = file.Bind("Radar", "ElevStepDeg", 5f, new ConfigDescription("Manual antenna elevation step (degrees).", new AcceptableValueRange<float>(1f, 30f)));
-            ElevAuto = file.Bind("Radar", "ElevAuto", true, "Slave antenna elevation toward locked target (or 0 in ACM search).");
+            ElevAuto = file.Bind("Radar", "ElevAuto", true, "Auto antenna elev (lock/candidate/best air/ACM look-down). Manual ElevUp/Down sticky until digit 9.");
             ScanSlewStepDeg = file.Bind("Radar", "ScanSlewStepDeg", 5f, new ConfigDescription("Manual scan-center slew step (degrees).", new AcceptableValueRange<float>(1f, 30f)));
             ContactUpdateHz = file.Bind("Radar", "ContactUpdateHz", 15f, new ConfigDescription("Throttle for ContactProvider heavy work (Hz). GUI draws from cached snapshot.", new AcceptableValueRange<float>(5f, 60f)));
             DisableVanillaRadar = file.Bind("Radar", "DisableVanillaRadar", false, "When true, Harmony Prefix skips TacScreen.ScanRadar / Radar.TargetSearch for the local player aircraft only (AI unaffected). Default false for BIA coexistence (BIARadar / shared tracks). User may enable. Fail-soft.");

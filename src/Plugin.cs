@@ -16,8 +16,8 @@ namespace RDA
         public const string DisplayName = "Oritasy's RADAR";
         public const string BiaRuntimeGuid = "bia.runtime";
         // BepInEx parses this value as SemVer; keep the brand suffix in DisplayVersion.
-        public const string Version = "0.0.7";
-        public const string DisplayVersion = "0.0.7T";
+        public const string Version = "0.0.8";
+        public const string DisplayVersion = "0.0.8T";
 
         /// <summary>Full expansion for README / log only — never shown on the GUI chrome.</summary>
         public const string FullExpansion = "Realtime Aerial Detection And Ranging (R.A.D.A.R.)";
@@ -189,11 +189,13 @@ namespace RDA
                 if (RDA.Config.ElevUpHotkey.Value.IsDown())
                 {
                     _modes.ElevUp();
+                    RDA.Config.ElevAuto.Value = _modes.ElevAuto;
                 }
 
                 if (RDA.Config.ElevDownHotkey.Value.IsDown())
                 {
                     _modes.ElevDown();
+                    RDA.Config.ElevAuto.Value = _modes.ElevAuto;
                 }
 
                 if (RDA.Config.ElevAutoHotkey.Value.IsDown())
@@ -237,7 +239,7 @@ namespace RDA
                 _contacts.Tick();
                 MissileRadarSupport.Tick(_contacts.Player);
                 _modes.EnginePowered = _contacts.EngineRunning;
-                _modes.Tick(Time.unscaledDeltaTime);
+                _modes.Tick(Time.unscaledDeltaTime, _contacts.Contacts, _contacts.OwnshipAltitudeMeters);
                 _rwr.OwnshipHeadingDeg = _contacts.OwnshipHeadingDeg;
                 _rwr.PlayerAircraft = _contacts.Player;
                 _rwr.Tick(Time.unscaledDeltaTime);
@@ -308,10 +310,12 @@ namespace RDA
             else if (DigitDown(KeyCode.Alpha7, KeyCode.Keypad7))
             {
                 modes.ElevUp();
+                RDA.Config.ElevAuto.Value = modes.ElevAuto;
             }
             else if (DigitDown(KeyCode.Alpha8, KeyCode.Keypad8))
             {
                 modes.ElevDown();
+                RDA.Config.ElevAuto.Value = modes.ElevAuto;
             }
             else if (DigitDown(KeyCode.Alpha9, KeyCode.Keypad9))
             {

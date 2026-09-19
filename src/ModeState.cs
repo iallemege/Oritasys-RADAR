@@ -520,7 +520,11 @@ namespace RDA
             ElevAuto = !ElevAuto;
         }
 
-        internal void Tick(float dt)
+        /// <summary>
+        /// Advance scan + elev. When ElevAuto, slews toward lock / candidate / best air / ACM look-down.
+        /// Manual ElevUp/Down clears ElevAuto and is sticky until digit 9 / ElevAutoHotkey re-enables.
+        /// </summary>
+        internal void Tick(float dt, IReadOnlyList<RadarContact>? contacts = null, float ownshipHatMeters = 0f)
         {
             if (Locked)
             {
@@ -580,27 +584,100 @@ namespace RDA
                 ScanAzimuthDeg = Mathf.Clamp(ScanAzimuthDeg, -half, half);
             }
 
+            // Manual elev has priority: ElevUp/Down set ElevAuto=false and we do not fight the antenna.
             if (ElevAuto)
             {
-                float targetElev = 0f;
-                if (Locked && LockedElevationDeg.HasValue)
-                {
-                    targetElev = LockedElevationDeg.Value;
-                }
-                else if (Mode == RadarMode.Acm && !Locked)
-                {
-                    // A/G look-down bias for surface search
-                    targetElev = -8f;
-                }
-                else if (Mode == RadarMode.Trk && LockedElevationDeg.HasValue)
-                {
-                    targetElev = LockedElevationDeg.Value;
-                }
-
+                float targetElev = ResolveAutoElevTarget(contacts, ownshipHatMeters);
                 AntennaElevationDeg = Mathf.MoveTowards(AntennaElevationDeg, targetElev, ElevSlewDegPerSec * dt);
             }
 
             AntennaElevationDeg = Mathf.Clamp(AntennaElevationDeg, -ElevClampDeg, ElevClampDeg);
+        }
+
+        /// <summary>
+        /// Auto elev priority: locked elev → AcmCandidate/best air elev → ACM look-down (−6…−12° by HAT) → 0° air search.
+        /// </summary>
+        private float ResolveAutoElevTarget(IReadOnlyList<RadarContact>? contacts, float ownshipHatMeters)
+        {
+            if (Locked && LockedElevationDeg.HasValue)
+            {
+                return LockedElevationDeg.Value;
+            }
+
+            // AcmCandidate elev (ACM designate, or SRC/TWS best-track highlight).
+            if (AcmCandidateId is int candId && contacts != null)
+            {
+                for (int i = 0; i < contacts.Count; i++)
+                {
+                    RadarContact c = contacts[i];
+                    if (c.Id == candId)
+                    {
+                        return c.ElevationDeg;
+                    }
+                }
+            }
+
+            // TWS/SRC/TRK air search: best air contact elev (foe/unknown preferred, then nearest).
+            if (Mode == RadarMode.SrcRws || Mode == RadarMode.Tws || Mode == RadarMode.Trk)
+            {
+                if (TryBestAirElev(contacts, out float airElev))
+                {
+                    return airElev;
+                }
+
+                return 0f;
+            }
+
+            if (Mode == RadarMode.Acm)
+            {
+                return AcmLookDownElev(ownshipHatMeters);
+            }
+
+            return 0f;
+        }
+
+        private static bool TryBestAirElev(IReadOnlyList<RadarContact>? contacts, out float elev)
+        {
+            elev = 0f;
+            if (contacts == null || contacts.Count == 0)
+            {
+                return false;
+            }
+
+            RadarContact? best = null;
+            float bestScore = float.MaxValue;
+            for (int i = 0; i < contacts.Count; i++)
+            {
+                RadarContact c = contacts[i];
+                // Air-search elev: skip surface; allow Air / Unknown / Missile.
+                if (c.Kind == ContactKind.Ground || c.Kind == ContactKind.Naval)
+                {
+                    continue;
+                }
+
+                float threat = c.Iff == IffRelation.Foe ? 0f : c.Iff == IffRelation.Unknown ? 1f : 3f;
+                float score = threat * 1e6f + c.RangeMeters;
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    best = c;
+                }
+            }
+
+            if (best == null)
+            {
+                return false;
+            }
+
+            elev = best.ElevationDeg;
+            return true;
+        }
+
+        /// <summary>ACM A/G look-down ≈ −6° (low HAT) … −12° (high HAT).</summary>
+        private static float AcmLookDownElev(float hatMeters)
+        {
+            float t = Mathf.Clamp01(Mathf.Max(0f, hatMeters) / 4000f);
+            return Mathf.Lerp(-6f, -12f, t);
         }
     }
 }

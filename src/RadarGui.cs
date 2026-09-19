@@ -39,8 +39,7 @@ namespace RDA
         internal void Draw()
         {
             EnsureWindowOnScreen();
-            // Apply opacity to panel fills (ScopeDraw.PanelFill / PanelBgEffective).
-            // GUI.color around GUI.Window does NOT tint opaque ScopeDraw.Fill — do not rely on it.
+            // Panel translucency via GL (ScopeDraw.PanelFill) — not GUI.color / stacked white fills.
             float opacity = Mathf.Clamp(Config.WindowOpacity != null ? Config.WindowOpacity.Value : 0.92f, 0.05f, 1f);
             ScopeDraw.UiOpacity = opacity;
             _window = GUI.Window(WindowId, _window, DrawContents, GUIContent.none, ScopeDraw.WindowStyle);
@@ -175,7 +174,7 @@ namespace RDA
         {
             GUI.BeginGroup(rect);
 
-            ScopeDraw.Fill(new Rect(0f, 0f, rect.width, rect.height), new Color(0.015f, 0.06f, 0.05f, 0.9f * ScopeDraw.UiOpacity));
+            // No stacked semi-opaque fill — outer HudPanel GL already provides see-through dark.
             ScopeDraw.Fill(new Rect(0f, rect.height - 2f, rect.width, 2f), ScopeDraw.CyanAccent * new Color(1f, 1f, 1f, 0.45f));
 
             ScopeDraw.ClippedLabel(
@@ -317,7 +316,7 @@ namespace RDA
         /// <summary>PW-style dense STT lock panel (vanilla lock only).</summary>
         private void DrawLockDataStrip(Rect rect)
         {
-            ScopeDraw.Fill(rect, new Color(0.1f, 0.05f, 0.01f, 0.95f * ScopeDraw.UiOpacity));
+            ScopeDraw.Fill(rect, new Color(0.08f, 0.04f, 0.01f, 0.85f));
             ScopeDraw.Border(rect, ScopeDraw.AmberLock, 1.75f);
 
             RadarContact? tgt = FindPrimary();
@@ -1291,7 +1290,7 @@ private void DrawPpi(Rect area)
 
         private void DrawFooter(Rect rect)
         {
-            ScopeDraw.Fill(rect, new Color(0.015f, 0.05f, 0.04f, 0.9f * ScopeDraw.UiOpacity));
+            // Footer sits on HudPanel; thin border only (no second translucent green wash).
             ScopeDraw.Border(rect, ScopeDraw.PanelBorderOuter, 1.5f);
 
             string left =

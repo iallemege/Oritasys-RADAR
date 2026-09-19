@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace RDA
 {
@@ -34,6 +35,8 @@ namespace RDA
         internal static readonly Color GlowDark = new Color(0.05f, 0.22f, 0.12f, 0.55f);
 
         private static Texture2D? _pixel;
+        private static Texture2D? _clearPixel;
+        private static Material? _glMat;
         private static GUIStyle? _header;
         private static GUIStyle? _tiny;
         private static GUIStyle? _muted;
@@ -63,6 +66,26 @@ namespace RDA
                 }
 
                 return _pixel;
+            }
+        }
+
+        /// <summary>Fully transparent 1×1 — use for GUIStyle backgrounds so the game shows through.</summary>
+        private static Texture2D ClearPixel
+        {
+            get
+            {
+                if (_clearPixel == null)
+                {
+                    _clearPixel = new Texture2D(1, 1, TextureFormat.RGBA32, false)
+                    {
+                        hideFlags = HideFlags.HideAndDontSave,
+                        filterMode = FilterMode.Point
+                    };
+                    _clearPixel.SetPixel(0, 0, Color.clear);
+                    _clearPixel.Apply();
+                }
+
+                return _clearPixel;
             }
         }
 
@@ -215,7 +238,8 @@ namespace RDA
                         overflow = new RectOffset(0, 0, 0, 0),
                         contentOffset = Vector2.zero
                     };
-                    Texture2D empty = Pixel;
+                    // MUST be clear — a white Pixel bg + translucent panel washes the MFD bright.
+                    Texture2D empty = ClearPixel;
                     _window.normal.background = empty;
                     _window.onNormal.background = empty;
                     _window.active.background = empty;
@@ -272,6 +296,8 @@ namespace RDA
 
         internal static void Fill(Rect rect, Color color)
         {
+            // Glyphs / accents / chips: keep IMGUI DrawTexture (full-alpha colors stay readable).
+            // Do NOT use this for large semi-transparent panel backgrounds — use FillTranslucent.
             Rect r = Snap(rect);
             Color prev = GUI.color;
             GUI.color = color;
@@ -279,10 +305,91 @@ namespace RDA
             GUI.color = prev;
         }
 
-        /// <summary>Fill with PanelBgEffective (respects WindowOpacity).</summary>
+        /// <summary>
+        /// True see-through dark panel via GL quads (SrcAlpha OneMinusSrcAlpha).
+        /// Avoids IMGUI white-pixel + Color.alpha wash that brightens instead of translucency.
+        /// </summary>
+        internal static void FillTranslucent(Rect rect, Color color)
+        {
+            if (Event.current.type != EventType.Repaint)
+            {
+                return;
+            }
+
+            Rect r = Snap(rect);
+            if (r.width < 0.5f || r.height < 0.5f)
+            {
+                return;
+            }
+
+            // GUI space → screen (bottom-left origin).
+            Vector2 bl = GUIUtility.GUIToScreenPoint(new Vector2(r.xMin, r.yMax));
+            Vector2 tr = GUIUtility.GUIToScreenPoint(new Vector2(r.xMax, r.yMin));
+            float x0 = Mathf.Min(bl.x, tr.x);
+            float x1 = Mathf.Max(bl.x, tr.x);
+            float y0 = Mathf.Min(bl.y, tr.y);
+            float y1 = Mathf.Max(bl.y, tr.y);
+
+            EnsureGlMaterial();
+            if (_glMat == null)
+            {
+                // Soft fallback: dark pixel fill (still no white wash).
+                Fill(r, color);
+                return;
+            }
+
+            GL.PushMatrix();
+            try
+            {
+                _glMat.SetPass(0);
+                // Bottom-left origin matches GUIToScreenPoint.
+                GL.LoadPixelMatrix(0f, Screen.width, 0f, Screen.height);
+                GL.Begin(GL.QUADS);
+                GL.Color(color);
+                GL.Vertex3(x0, y0, 0f);
+                GL.Vertex3(x1, y0, 0f);
+                GL.Vertex3(x1, y1, 0f);
+                GL.Vertex3(x0, y1, 0f);
+                GL.End();
+            }
+            finally
+            {
+                GL.PopMatrix();
+            }
+        }
+
+        private static void EnsureGlMaterial()
+        {
+            if (_glMat != null)
+            {
+                return;
+            }
+
+            Shader? shader = Shader.Find("Hidden/Internal-Colored")
+                ?? Shader.Find("UI/Default")
+                ?? Shader.Find("Sprites/Default");
+            if (shader == null)
+            {
+                // Fail-soft: leave _glMat null; FillTranslucent no-ops without a material.
+                return;
+            }
+
+            _glMat = new Material(shader)
+            {
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            _glMat.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
+            _glMat.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
+            _glMat.SetInt("_Cull", (int)CullMode.Off);
+            _glMat.SetInt("_ZWrite", 0);
+        }
+
+        /// <summary>Panel background with WindowOpacity as true alpha (dark, see-through).</summary>
         internal static void PanelFill(Rect rect)
         {
-            Fill(rect, PanelBgEffective);
+            float a = Mathf.Clamp(UiOpacity, 0.05f, 1f);
+            // Near-black RGB; only alpha tracks opacity — never multiply green toward white.
+            FillTranslucent(rect, new Color(0.02f, 0.02f, 0.02f, a));
         }
 
         internal static void Border(Rect rect, Color color, float width = 1.5f)
@@ -295,11 +402,10 @@ namespace RDA
             Fill(new Rect(r.xMax - w, r.y, w, r.height), color);
         }
 
-        /// <summary>Dark bezel + double border + corner brackets for MFD chrome.</summary>
+        /// <summary>Dark bezel + thin phosphor border for MFD chrome (GL translucent fill).</summary>
         internal static void HudPanel(Rect rect, bool accentTop = true)
         {
-            // CRT: flat near-black fill + thin phosphor border. No bezel / brackets / glow chrome.
-            // PanelFill applies WindowOpacity so the MFD is visibly translucent.
+            // Single GL dark quad — game world shows through at low WindowOpacity (no white wash).
             Rect r = Snap(rect);
             PanelFill(r);
             Border(r, PhosphorDim, 1f);

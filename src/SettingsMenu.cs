@@ -87,7 +87,7 @@ namespace RDA
             float op = Config.WindowOpacity.Value;
             ScopeDraw.ClippedLabel(
                 new Rect(pad, y, w, 18f),
-                "Opacity  " + op.ToString("0.00") + "  (transparency)",
+                "Panel opacity / translucency  " + op.ToString("0.00"),
                 _label!);
             y += 18f;
             op = GUI.HorizontalSlider(new Rect(pad, y, w, 18f), op, 0.05f, 1f);
@@ -133,8 +133,9 @@ namespace RDA
         private static void DrawChrome(Rect rect)
         {
             // Dark bezel #020B10, double border, cyan accent bar (Oritasy / ScopeDraw MFD chrome).
-            Color bezel = new Color(0.008f, 0.043f, 0.063f, 0.98f); // #020B10
-            ScopeDraw.Fill(rect, bezel);
+            // Dark GL panel (true translucency); avoid IMGUI white-pixel wash.
+            float a = Mathf.Clamp(Config.WindowOpacity != null ? Config.WindowOpacity.Value : 0.92f, 0.05f, 1f);
+            ScopeDraw.FillTranslucent(rect, new Color(0.02f, 0.02f, 0.02f, Mathf.Max(0.55f, a)));
             ScopeDraw.Border(rect, ScopeDraw.PanelBorderOuter, 2f);
             Rect inner = new Rect(rect.x + 3f, rect.y + 3f, rect.width - 6f, rect.height - 6f);
             ScopeDraw.Border(inner, ScopeDraw.PanelBorder, 1.5f);
