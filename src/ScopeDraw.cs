@@ -322,13 +322,18 @@ namespace RDA
                 return;
             }
 
-            // GUI space → screen (bottom-left origin).
-            Vector2 bl = GUIUtility.GUIToScreenPoint(new Vector2(r.xMin, r.yMax));
-            Vector2 tr = GUIUtility.GUIToScreenPoint(new Vector2(r.xMax, r.yMin));
-            float x0 = Mathf.Min(bl.x, tr.x);
-            float x1 = Mathf.Max(bl.x, tr.x);
-            float y0 = Mathf.Min(bl.y, tr.y);
-            float y1 = Mathf.Max(bl.y, tr.y);
+            // GUIToScreenPoint returns top-left screen pixels (Y down). GL.LoadPixelMatrix(0,w,0,h)
+            // is bottom-left (Y up) — without flipping Y the panel draws as a ghost black rect
+            // mirrored vertically (settings chrome / opacity look "wrong" / "another black box").
+            Vector2 p0 = GUIUtility.GUIToScreenPoint(new Vector2(r.xMin, r.yMin));
+            Vector2 p1 = GUIUtility.GUIToScreenPoint(new Vector2(r.xMax, r.yMax));
+            float x0 = Mathf.Min(p0.x, p1.x);
+            float x1 = Mathf.Max(p0.x, p1.x);
+            float yTop = Mathf.Min(p0.y, p1.y);
+            float yBot = Mathf.Max(p0.y, p1.y);
+            // Convert top-left screen Y → GL bottom-left Y.
+            float y0 = Screen.height - yBot;
+            float y1 = Screen.height - yTop;
 
             EnsureGlMaterial();
             if (_glMat == null)
@@ -342,7 +347,6 @@ namespace RDA
             try
             {
                 _glMat.SetPass(0);
-                // Bottom-left origin matches GUIToScreenPoint.
                 GL.LoadPixelMatrix(0f, Screen.width, 0f, Screen.height);
                 GL.Begin(GL.QUADS);
                 GL.Color(color);
