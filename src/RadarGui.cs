@@ -41,8 +41,17 @@ namespace RDA
             EnsureWindowOnScreen();
             // Panel translucency via GL (ScopeDraw.PanelFill) — not GUI.color / stacked white fills.
             float opacity = Mathf.Clamp(Config.WindowOpacity != null ? Config.WindowOpacity.Value : 0.92f, 0.05f, 1f);
-            ScopeDraw.UiOpacity = opacity;
-            _window = GUI.Window(WindowId, _window, DrawContents, GUIContent.none, ScopeDraw.WindowStyle);
+            float prevUiOpacity = ScopeDraw.UiOpacity;
+            try
+            {
+                // WindowOpacity applies only to MFD PanelFill / HudPanel via UiOpacity.
+                ScopeDraw.UiOpacity = opacity;
+                _window = GUI.Window(WindowId, _window, DrawContents, GUIContent.none, ScopeDraw.WindowStyle);
+            }
+            finally
+            {
+                ScopeDraw.UiOpacity = prevUiOpacity;
+            }
         }
 
         /// <summary>Live apply settings-menu position to the MFD rect.</summary>

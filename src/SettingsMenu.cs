@@ -42,13 +42,17 @@ namespace RDA
 
             EnsureStyles();
             int prevDepth = GUI.depth;
+            float prevUiOpacity = ScopeDraw.UiOpacity;
             try
             {
+                // Never inherit MFD WindowOpacity into settings chrome / fills.
+                ScopeDraw.UiOpacity = 1f;
                 GUI.depth = Config.GuiDepth.Value - 1; // slightly above MFD
                 _window = GUI.Window(WindowId, _window, id => DrawContents(id, gui), GUIContent.none, ScopeDraw.WindowStyle);
             }
             finally
             {
+                ScopeDraw.UiOpacity = prevUiOpacity;
                 GUI.depth = prevDepth;
             }
         }
@@ -87,7 +91,7 @@ namespace RDA
             float op = Config.WindowOpacity.Value;
             ScopeDraw.ClippedLabel(
                 new Rect(pad, y, w, 18f),
-                "Panel opacity / translucency  " + op.ToString("0.00"),
+                "RADAR panel opacity  " + op.ToString("0.00"),
                 _label!);
             y += 18f;
             op = GUI.HorizontalSlider(new Rect(pad, y, w, 18f), op, 0.05f, 1f);
@@ -133,9 +137,9 @@ namespace RDA
         private static void DrawChrome(Rect rect)
         {
             // Dark bezel #020B10, double border, cyan accent bar (Oritasy / ScopeDraw MFD chrome).
-            // Dark GL panel (true translucency); avoid IMGUI white-pixel wash.
-            float a = Mathf.Clamp(Config.WindowOpacity != null ? Config.WindowOpacity.Value : 0.92f, 0.05f, 1f);
-            ScopeDraw.FillTranslucent(rect, new Color(0.02f, 0.02f, 0.02f, Mathf.Max(0.55f, a)));
+            // Settings chrome is ALWAYS opaque — WindowOpacity only affects MFD PanelFill/HudPanel.
+            const float settingsAlpha = 0.98f;
+            ScopeDraw.FillTranslucent(rect, new Color(0.02f, 0.02f, 0.02f, settingsAlpha));
             ScopeDraw.Border(rect, ScopeDraw.PanelBorderOuter, 2f);
             Rect inner = new Rect(rect.x + 3f, rect.y + 3f, rect.width - 6f, rect.height - 6f);
             ScopeDraw.Border(inner, ScopeDraw.PanelBorder, 1.5f);

@@ -140,7 +140,7 @@ namespace RDA
             WindowWidth = file.Bind("Display", "WindowWidth", 680f, "Overlay window width (default raised in 1.0.3 for strip text; saved larger sizes kept).");
             WindowHeight = file.Bind("Display", "WindowHeight", 520f, "Overlay window height (default raised in 1.0.3 for taller data strip; saved larger sizes kept).");
             WindowOpacity = file.Bind("Display", "WindowOpacity", 0.92f,
-                new ConfigDescription("Panel opacity / translucency (0.05 = see-through dark, 1.0 = opaque). GL panel fill only — glyphs stay full alpha.", new AcceptableValueRange<float>(0.05f, 1f)));
+                new ConfigDescription("RADAR panel opacity only (0.05 = see-through dark, 1.0 = opaque). Affects MFD PanelFill/HudPanel — not the / settings window. Glyphs stay full alpha.", new AcceptableValueRange<float>(0.05f, 1f)));
 
             AcmAltitudeBandM = file.Bind("Radar", "AcmAltitudeBandM", 1200f, new ConfigDescription("ACM A/G same-height gate (meters). Keep surface contacts near ground (alt ≤ band) or within ±band of ownship altitude. High air-altitude unknowns are dropped.", new AcceptableValueRange<float>(200f, 5000f)));
             AcmLockDwellSec = file.Bind("Radar", "AcmLockDwellSec", 0.2f, new ConfigDescription("Legacy alias; ACM is A/G designate (no air auto-lock). Prefer TwsLockDwellSec for air STT.", new AcceptableValueRange<float>(0.05f, 5f)));

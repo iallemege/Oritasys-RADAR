@@ -11,7 +11,7 @@ namespace RDA
         internal static readonly Color PhosphorMuted = new Color(0.2f, 0.75f, 0.35f, 0.8f);
         /// <summary>Deep panel #020B10.</summary>
         internal static readonly Color PanelBg = new Color(0.02f, 0.02f, 0.02f, 0.97f); // near-black CRT
-        /// <summary>Live MFD panel opacity from Display.WindowOpacity (applied to panel fills only).</summary>
+        /// <summary>Live MFD panel opacity from Display.WindowOpacity (PanelFill/HudPanel only; never settings chrome).</summary>
         internal static float UiOpacity = 1f;
 
         /// <summary>Panel background with WindowOpacity multiplied into alpha.</summary>
